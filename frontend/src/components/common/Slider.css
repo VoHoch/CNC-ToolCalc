@@ -1,0 +1,237 @@
+/**
+ * Slider Component Styles
+ *
+ * CRITICAL: NO visible thumb - markers only!
+ * Gradient background: Blue → Green → Red
+ *
+ * Version: v0.1.0
+ */
+
+.slider {
+  position: relative;
+  width: 100%;
+}
+
+/* ============================================
+   LABELS
+   ============================================ */
+
+.slider__labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+  gap: var(--space-3);
+}
+
+.slider__label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.slider__label--left {
+  text-align: left;
+}
+
+.slider__label--right {
+  text-align: right;
+  margin-left: auto;
+}
+
+.slider__value {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  min-width: 3rem;
+  text-align: center;
+}
+
+/* ============================================
+   CONTAINER
+   ============================================ */
+
+.slider__container {
+  position: relative;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+}
+
+.slider--compact .slider__container {
+  height: 1.5rem;
+}
+
+/* ============================================
+   TRACK (Gradient Background)
+   ============================================ */
+
+.slider__track {
+  position: absolute;
+  width: 100%;
+  height: var(--slider-track-height);
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  z-index: var(--z-base);
+}
+
+.slider--compact .slider__track {
+  height: var(--slider-track-height-compact);
+}
+
+/* ============================================
+   INPUT (Range Element)
+   CRITICAL: INVISIBLE THUMB!
+   ============================================ */
+
+.slider__input {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  width: 100%;
+  height: var(--slider-track-height);
+  background: transparent;
+  cursor: pointer;
+  z-index: calc(var(--z-base) + 1);
+}
+
+.slider--compact .slider__input {
+  height: var(--slider-track-height-compact);
+}
+
+.slider--disabled .slider__input {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* CRITICAL: Invisible thumb for Webkit browsers (Chrome, Safari, Edge) */
+.slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* CRITICAL: Invisible thumb for Firefox */
+.slider__input::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+/* Track styling for Firefox */
+.slider__input::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+/* Remove default focus outline - we use custom focus indicator */
+.slider__input:focus {
+  outline: none;
+}
+
+/* Custom focus indicator (track glow) */
+.slider__input:focus-visible ~ .slider__track {
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/* ============================================
+   MARKERS
+   ============================================ */
+
+.slider__markers {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: calc(var(--z-base) + 2);
+}
+
+.slider__marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--slider-marker-width);
+  height: var(--slider-marker-height);
+  background: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+}
+
+.slider__marker--active {
+  background: var(--accent-primary);
+  box-shadow: var(--slider-marker-active-glow);
+  height: calc(var(--slider-marker-height) + 4px);
+  width: calc(var(--slider-marker-width) + 1px);
+}
+
+/* Marker labels */
+.slider__marker-label {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  font-weight: var(--font-weight-medium);
+}
+
+.slider__marker--active .slider__marker-label {
+  color: var(--accent-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ============================================
+   COMPACT MODE
+   ============================================ */
+
+.slider--compact .slider__marker {
+  height: calc(var(--slider-marker-height) - 4px);
+}
+
+.slider--compact .slider__marker--active {
+  height: var(--slider-marker-height);
+}
+
+.slider--compact .slider__marker-label {
+  font-size: 0.625rem; /* 10px */
+}
+
+/* ============================================
+   DISABLED STATE
+   ============================================ */
+
+.slider--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.slider--disabled .slider__track {
+  background: var(--bg-tertiary) !important;
+}
+
+.slider--disabled .slider__marker {
+  background: var(--text-disabled);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .slider__marker-label {
+    font-size: 0.625rem; /* 10px */
+  }
+}

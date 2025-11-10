@@ -1,0 +1,274 @@
+.material-selection {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: var(--space-8);
+}
+
+/* Tool Tabs */
+.tool-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-3);
+  border-bottom: 2px solid var(--border-default);
+  margin-bottom: var(--space-6);
+}
+
+.tool-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.tool-tab:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-strong);
+}
+
+.tool-tab--active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.tool-tab__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tool-tab__count {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.tool-tab--active .tool-tab__count {
+  opacity: 0.9;
+}
+
+/* Current Tool Info */
+.current-tool-info {
+  grid-column: 1 / -1;
+  padding: var(--space-5);
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-6);
+}
+
+.current-tool-info h3 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 1.125rem;
+}
+
+.current-tool-info strong {
+  color: var(--accent-primary);
+}
+
+.current-tool-specs {
+  display: flex;
+  gap: var(--space-3);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Material Grid */
+.material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-5);
+}
+
+.material-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.material-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.material-card__title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.material-card__badge {
+  padding: var(--space-1) var(--space-3);
+  background: var(--accent-primary);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.material-card__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.material-card__detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.material-card__label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.material-card__category {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+/* Hardness Bar */
+.material-card__hardness {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.material-card__hardness-bar {
+  position: relative;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.material-card__hardness-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  transition: width 0.3s ease;
+}
+
+.material-card__hardness-value {
+  position: absolute;
+  right: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Selection Summary Sidebar */
+.selection-summary__stats {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) 0;
+}
+
+.stat__label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.stat__value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+/* Tool Material Summary */
+.tool-material-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tool-material-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tool-material-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.tool-material-item__header strong {
+  color: var(--text-primary);
+}
+
+.tool-material-item__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  background: var(--accent-primary);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tool-material-item__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tool-material-item__tag {
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.tool-material-item__empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+@media (max-width: 1024px) {
+  .material-selection {
+    grid-template-columns: 1fr;
+  }
+
+  .screen__sidebar {
+    position: static;
+  }
+
+  .material-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+}

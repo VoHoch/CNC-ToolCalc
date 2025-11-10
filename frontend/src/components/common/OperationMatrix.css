@@ -1,0 +1,246 @@
+/**
+ * OperationMatrix Component Styles
+ *
+ * 4-group collapsible operation selector
+ * Features: expand/collapse, checkboxes, counters
+ *
+ * Version: v0.1.0
+ */
+
+/* ============================================
+   CONTAINER
+   ============================================ */
+
+.operation-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+/* ============================================
+   GROUP
+   ============================================ */
+
+.operation-matrix__group {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* ============================================
+   GROUP HEADER
+   ============================================ */
+
+.operation-matrix__group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.operation-matrix__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--transition-fast);
+}
+
+.operation-matrix__toggle:hover {
+  color: var(--accent-primary);
+}
+
+.operation-matrix__toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-sm);
+}
+
+.operation-matrix__toggle-icon {
+  display: inline-block;
+  width: 1rem;
+  text-align: center;
+  transition: transform var(--transition-base);
+  color: var(--text-secondary);
+}
+
+.operation-matrix__group-name {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: var(--font-size-sm);
+}
+
+/* ============================================
+   GROUP ACTIONS
+   ============================================ */
+
+.operation-matrix__group-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.operation-matrix__select-all {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+.operation-matrix__select-all:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.operation-matrix__counter {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  min-width: 3rem;
+  text-align: center;
+}
+
+/* ============================================
+   GROUP CONTENT
+   ============================================ */
+
+.operation-matrix__group-content {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* ============================================
+   OPERATION ITEM
+   ============================================ */
+
+.operation-matrix__operation {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast);
+}
+
+.operation-matrix__operation:hover {
+  background: var(--bg-tertiary);
+}
+
+.operation-matrix__operation--selected {
+  background: rgba(99, 102, 241, 0.1);
+  border-left: 3px solid var(--accent-primary);
+  padding-left: calc(var(--space-3) - 3px);
+}
+
+.operation-matrix__operation-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.operation-matrix__checkbox {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.operation-matrix__checkbox:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.operation-matrix__operation-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.operation-matrix__operation-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.operation-matrix__operation-description {
+  margin-top: var(--space-2);
+  margin-left: calc(1rem + var(--space-3));
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .operation-matrix__group-header {
+    padding: var(--space-3);
+  }
+
+  .operation-matrix__group-name {
+    font-size: var(--font-size-xs);
+  }
+
+  .operation-matrix__counter {
+    font-size: var(--font-size-xs);
+    min-width: 2.5rem;
+  }
+
+  .operation-matrix__operation {
+    padding: var(--space-2);
+  }
+
+  .operation-matrix__operation-name {
+    font-size: var(--font-size-xs);
+  }
+}
+
+/* ============================================
+   ACCESSIBILITY
+   ============================================ */
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .operation-matrix__group {
+    border: 2px solid var(--border-strong);
+  }
+
+  .operation-matrix__operation--selected {
+    border-left-width: 4px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .operation-matrix__toggle,
+  .operation-matrix__toggle-icon,
+  .operation-matrix__operation {
+    transition: none;
+  }
+}

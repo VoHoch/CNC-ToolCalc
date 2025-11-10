@@ -1,0 +1,42 @@
+/**
+ * CNC-ToolCalc Font Imports
+ *
+ * Version: v0.1.0
+ * Last Updated: 2025-11-10
+ *
+ * Fonts:
+ * - Inter: Primary UI font (system-ui fallback)
+ * - Work Sans: Headlines and display text
+ * - Fira Code: Monospace for code/parameters
+ */
+
+/* ============================================
+   INTER - Primary UI Font
+   ============================================ */
+
+/* Inter from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ============================================
+   WORK SANS - Headline Font
+   ============================================ */
+
+/* Work Sans from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@500;600;700&display=swap');
+
+/* ============================================
+   FIRA CODE - Monospace Font
+   ============================================ */
+
+/* Fira Code from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap');
+
+/* ============================================
+   FONT DISPLAY OPTIMIZATION
+   ============================================
+
+   Using 'display=swap' in URL parameters ensures:
+   - Text remains visible during font loading
+   - FOIT (Flash of Invisible Text) is avoided
+   - Better perceived performance
+*/

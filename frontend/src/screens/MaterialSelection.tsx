@@ -3,7 +3,6 @@ import { useToolStore } from '@/state/toolStore';
 import { useMaterialStore } from '@/state/materialStore';
 import { Card, Button } from '@/components/common';
 import { apiClient } from '@/api/client';
-import type { Material } from '@/types/api';
 import './MaterialSelection.css';
 
 interface MaterialSelectionProps {

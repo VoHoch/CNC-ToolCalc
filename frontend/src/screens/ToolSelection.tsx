@@ -1,7 +1,6 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useToolStore } from '@/state/toolStore';
 import { Card, Button } from '@/components/common';
-import type { Tool } from '@/types/api';
 import './ToolSelection.css';
 
 interface ToolSelectionProps {

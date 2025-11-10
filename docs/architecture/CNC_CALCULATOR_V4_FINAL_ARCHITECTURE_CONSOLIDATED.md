@@ -3063,7 +3063,7 @@ def validate_preset(preset: CalculatedPreset) -> ValidationResult:
 
 > **Hinweis:** Die restlichen Teile sind hier kompakt zusammengefasst. Vollständige Details befinden sich in den Quell-Dokumenten (DELTA_REQUEST, Prototyp-Spezifikation, etc.)
 
-## TEIL 3: BACKEND-ARCHITEKTUR (Zusammenfassung)
+## TEIL 3: BACKEND-ARCHITEKTUR (DETAILED)
 
 ### 3.1 System-Architektur
 
@@ -3072,24 +3072,797 @@ def validate_preset(preset: CalculatedPreset) -> ValidationResult:
 - **Async Processing:** Celery + Redis für große Berechnungen
 - **Database:** SQLite (Dev) / PostgreSQL (Prod)
 
-### 3.2 REST API Endpoints
+**Architecture Layers:**
 
 ```
-POST   /api/v1/tools/parse              # Parse .tools file
-POST   /api/v1/calculate                # Calculate presets
-POST   /api/v1/calculate/async          # Async calculation
-POST   /api/v1/export/fusion            # Export to Fusion .tools
-POST   /api/v1/expert/calculate         # Expert Mode calculation
+┌─────────────────────────────────────────────────────────────┐
+│                     FRONTEND (React)                         │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐      │
+│  │ Screens │  │  State  │  │  API    │  │  Design  │      │
+│  │         │  │ (Zustand│  │ Client  │  │  System  │      │
+│  └─────────┘  └─────────┘  └─────────┘  └──────────┘      │
+└─────────────────────────────────────────────────────────────┘
+                        ▲
+                        │ HTTP/REST (JSON)
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│               BACKEND API (FastAPI)                          │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │               REST API Layer                          │  │
+│  │  • Request Validation (Pydantic)                     │  │
+│  │  • Response Serialization                            │  │
+│  │  • Error Handling Middleware                         │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                        ▼                                    │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │            Service Layer                              │  │
+│  │  • ToolParserService                                  │  │
+│  │  • CalculationService                                 │  │
+│  │  • ExpertModeService                                  │  │
+│  │  • ValidationService                                  │  │
+│  │  • ExportService                                      │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                        ▼                                    │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │          Domain/Business Logic                        │  │
+│  │  • V2.0 Calculation Engine (NO-TOUCH!)                │  │
+│  │  • 10-Phase Workflow                                  │  │
+│  │  • Material Database                                  │  │
+│  │  • Operation Logic                                    │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                        ▼                                    │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │          Data Layer                                   │  │
+│  │  • Database (SQLite/PostgreSQL)                       │  │
+│  │  • Redis Cache                                        │  │
+│  │  • File Storage                                       │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-### 3.3 Key Services
-
-1. **CalculationEngine** - Wrapper um V2.0 (10-Phasen-Workflow)
-2. **ExpertModeService** - Global Slider + Individual Overrides
-3. **ValidationService** - 8-Checks-System
-4. **ExportService** - Fusion Parametric Export
 
 ---
+
+### 3.2 FastAPI Application Structure
+
+**File Structure:**
+
+```
+backend/
+├── main.py                      # FastAPI app initialization
+├── requirements.txt             # Dependencies
+├── config.py                    # Configuration
+├── api/
+│   ├── __init__.py
+│   ├── v1/
+│   │   ├── __init__.py
+│   │   ├── router.py           # Main router
+│   │   ├── endpoints/
+│   │   │   ├── __init__.py
+│   │   │   ├── tools.py        # Tool parsing endpoints
+│   │   │   ├── calculate.py    # Calculation endpoints
+│   │   │   ├── expert.py       # Expert mode endpoints
+│   │   │   └── export.py       # Export endpoints
+│   │   └── dependencies.py     # Shared dependencies
+├── services/
+│   ├── __init__.py
+│   ├── tool_parser.py          # Parse .tools files
+│   ├── calculation.py          # Calculation service
+│   ├── expert_mode.py          # Expert mode logic
+│   ├── validation.py           # Validation service
+│   └── export.py               # Export service
+├── core/
+│   ├── __init__.py
+│   ├── v2_engine.py            # V2.0 Engine Wrapper (NO-TOUCH)
+│   ├── materials.py            # Material database
+│   └── operations.py           # Operation logic
+├── models/
+│   ├── __init__.py
+│   ├── schemas.py              # Pydantic models
+│   └── domain.py               # Domain models
+├── workers/
+│   ├── __init__.py
+│   ├── celery_app.py           # Celery configuration
+│   └── tasks.py                # Async tasks
+└── tests/
+    ├── __init__.py
+    ├── test_api.py
+    ├── test_services.py
+    └── test_calculations.py
+```
+
+---
+
+### 3.3 Main Application (main.py)
+
+```python
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from contextlib import asynccontextmanager
+import logging
+import time
+
+from api.v1.router import api_router
+from config import settings
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events."""
+    # Startup
+    logger.info("Starting CNC Calculator API v4.0")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
+    logger.info(f"Debug mode: {settings.DEBUG}")
+
+    # Initialize services
+    # ... initialization code ...
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down CNC Calculator API")
+    # ... cleanup code ...
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="CNC Calculator API",
+    description="REST API for CNC cutting parameter calculation",
+    version="4.0.0",
+    docs_url="/api/docs" if settings.DEBUG else None,
+    redoc_url="/api/redoc" if settings.DEBUG else None,
+    lifespan=lifespan
+)
+
+
+# CORS Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Request timing middleware
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+
+
+# Global exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": exc.errors(),
+            "body": exc.body
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error occurred",
+            "type": type(exc).__name__
+        }
+    )
+
+
+# Include API router
+app.include_router(api_router, prefix="/api/v1")
+
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "version": "4.0.0",
+        "environment": settings.ENVIRONMENT
+    }
+
+
+# Root endpoint
+@app.get("/")
+async def root():
+    return {
+        "message": "CNC Calculator API v4.0",
+        "docs": "/api/docs" if settings.DEBUG else "disabled in production"
+    }
+```
+
+---
+
+### 3.4 Configuration (config.py)
+
+```python
+from pydantic_settings import BaseSettings
+from typing import List
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    # Application
+    APP_NAME: str = "CNC Calculator"
+    VERSION: str = "4.0.0"
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
+
+    # API
+    API_V1_PREFIX: str = "/api/v1"
+    SECRET_KEY: str = "your-secret-key-here-change-in-production"
+
+    # CORS
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+
+    # Database
+    DATABASE_URL: str = "sqlite:///./cnc_calculator.db"
+    DATABASE_ECHO: bool = False
+
+    # Redis (for Celery)
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+
+    # Celery
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+
+    # File Upload
+    MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
+    UPLOAD_FOLDER: str = "./uploads"
+    ALLOWED_EXTENSIONS: set = {".tools", ".json"}
+
+    # Calculation
+    MAX_CONCURRENT_CALCULATIONS: int = 5
+    CALCULATION_TIMEOUT: int = 300  # 5 minutes
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str = "cnc_calculator.log"
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()
+```
+
+---
+
+### 3.5 REST API Endpoints (COMPLETE)
+
+**3.5.1 Tool Parser Endpoints (api/v1/endpoints/tools.py)**
+
+```python
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi.responses import JSONResponse
+from typing import List
+
+from services.tool_parser import ToolParserService
+from models.schemas import (
+    ToolParseResponse,
+    Tool,
+    PresetAnalysis
+)
+from config import settings
+
+router = APIRouter(prefix="/tools", tags=["tools"])
+parser_service = ToolParserService()
+
+
+@router.post("/parse", response_model=ToolParseResponse)
+async def parse_tools_file(
+    file: UploadFile = File(...)
+):
+    """
+    Parse Fusion 360 .tools file and extract tool geometries.
+
+    - Validates ZIP structure
+    - Parses tools.json
+    - Calculates L/D ratios
+    - Detects existing presets (Smart Detection)
+    - Returns tool list with preset analysis
+    """
+    # Validate file extension
+    if not file.filename.endswith('.tools'):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file format. Expected .tools file."
+        )
+
+    # Validate file size
+    contents = await file.read()
+    if len(contents) > settings.MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {settings.MAX_UPLOAD_SIZE / 1024 / 1024} MB"
+        )
+
+    # Parse file
+    try:
+        result = await parser_service.parse_tools_file(contents, file.filename)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid .tools file: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse file: {str(e)}"
+        )
+
+
+@router.get("/validate/{tool_id}")
+async def validate_tool_geometry(tool_id: str):
+    """
+    Validate tool geometry for calculation suitability.
+
+    Checks:
+    - DC > 0
+    - LCF > 0
+    - NOF >= 1
+    - L/D ratio warnings
+    """
+    # Implementation
+    pass
+```
+
+**3.5.2 Calculation Endpoints (api/v1/endpoints/calculate.py)**
+
+```python
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from typing import List, Optional
+from uuid import uuid4
+
+from services.calculation import CalculationService
+from services.validation import ValidationService
+from workers.tasks import calculate_presets_async
+from models.schemas import (
+    CalculationRequest,
+    CalculationResponse,
+    PresetResult,
+    AsyncTaskResponse,
+    TaskStatus
+)
+
+router = APIRouter(prefix="/calculate", tags=["calculate"])
+calculation_service = CalculationService()
+validation_service = ValidationService()
+
+
+@router.post("/", response_model=CalculationResponse)
+async def calculate_presets(
+    request: CalculationRequest
+):
+    """
+    Synchronous calculation of cutting parameters.
+
+    Use for small batches (< 20 presets).
+    For larger batches, use /calculate/async instead.
+
+    Process:
+    1. Validate request
+    2. Run 10-phase calculation for each preset
+    3. Apply coating factors
+    4. Apply surface quality adjustments
+    5. Apply expert mode overrides (if any)
+    6. Validate results (8-check system)
+    7. Return all results
+    """
+    # Validate request
+    validation_result = validation_service.validate_calculation_request(request)
+    if not validation_result.valid:
+        raise HTTPException(
+            status_code=422,
+            detail=validation_result.errors
+        )
+
+    # Check preset count
+    total_presets = len(request.tool_ids) * len(request.materials) * len(request.operations)
+    if total_presets > 20:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many presets ({total_presets}). Use /calculate/async for batches > 20."
+        )
+
+    # Calculate
+    try:
+        results = await calculation_service.calculate_batch(request)
+        return CalculationResponse(
+            success=True,
+            total_presets=len(results),
+            results=results,
+            warnings=validation_result.warnings
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Calculation failed: {str(e)}"
+        )
+
+
+@router.post("/async", response_model=AsyncTaskResponse)
+async def calculate_presets_async_endpoint(
+    request: CalculationRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Asynchronous calculation using Celery.
+
+    Use for large batches (> 20 presets).
+
+    Returns task_id immediately.
+    Client polls /calculate/status/{task_id} for progress.
+    """
+    # Validate request
+    validation_result = validation_service.validate_calculation_request(request)
+    if not validation_result.valid:
+        raise HTTPException(
+            status_code=422,
+            detail=validation_result.errors
+        )
+
+    # Create task
+    task = calculate_presets_async.delay(request.dict())
+
+    return AsyncTaskResponse(
+        task_id=task.id,
+        status="PENDING",
+        message="Calculation task created. Poll /calculate/status/{task_id} for progress."
+    )
+
+
+@router.get("/status/{task_id}", response_model=TaskStatus)
+async def get_task_status(task_id: str):
+    """
+    Get status of async calculation task.
+
+    Poll this endpoint every 1-2 seconds to monitor progress.
+
+    States:
+    - PENDING: Task queued
+    - STARTED: Calculation in progress
+    - SUCCESS: Completed successfully
+    - FAILURE: Error occurred
+    """
+    from celery.result import AsyncResult
+
+    task = AsyncResult(task_id)
+
+    if task.state == 'PENDING':
+        return TaskStatus(
+            task_id=task_id,
+            state=task.state,
+            status='Task is waiting to start',
+            progress=0
+        )
+    elif task.state == 'STARTED':
+        # Get progress from task meta
+        meta = task.info or {}
+        return TaskStatus(
+            task_id=task_id,
+            state=task.state,
+            status='Calculating presets...',
+            progress=meta.get('progress', 0),
+            current_preset=meta.get('current_preset'),
+            total_presets=meta.get('total_presets')
+        )
+    elif task.state == 'SUCCESS':
+        return TaskStatus(
+            task_id=task_id,
+            state=task.state,
+            status='Calculation completed',
+            progress=100,
+            result=task.result
+        )
+    elif task.state == 'FAILURE':
+        return TaskStatus(
+            task_id=task_id,
+            state=task.state,
+            status='Calculation failed',
+            error=str(task.info)
+        )
+    else:
+        return TaskStatus(
+            task_id=task_id,
+            state=task.state,
+            status=f'Unknown state: {task.state}'
+        )
+```
+
+**3.5.3 Expert Mode Endpoints (api/v1/endpoints/expert.py)**
+
+```python
+from fastapi import APIRouter, HTTPException
+from typing import List
+
+from services.expert_mode import ExpertModeService
+from models.schemas import (
+    ExpertModeRequest,
+    ExpertModeResponse,
+    ExpertModeValidation
+)
+
+router = APIRouter(prefix="/expert", tags=["expert"])
+expert_service = ExpertModeService()
+
+
+@router.post("/calculate", response_model=ExpertModeResponse)
+async def calculate_with_expert_mode(
+    request: ExpertModeRequest
+):
+    """
+    Calculate with expert mode overrides.
+
+    Supports:
+    - Global adjustment slider (-50% to +50%)
+    - ap reference override (DC/LCF)
+    - Individual parameter overrides (ae, ap, fz, vc)
+
+    Calculation order:
+    1. Base calculation
+    2. Apply global adjustment
+    3. Apply individual overrides
+    4. Validate (with warnings for aggressive settings)
+    """
+    # Validate overrides
+    validation = expert_service.validate_overrides(request.overrides)
+    if validation.has_errors:
+        raise HTTPException(
+            status_code=422,
+            detail=validation.errors
+        )
+
+    # Calculate with overrides
+    try:
+        result = await expert_service.calculate_with_overrides(request)
+        return ExpertModeResponse(
+            success=True,
+            result=result,
+            validation=validation
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Expert mode calculation failed: {str(e)}"
+        )
+
+
+@router.post("/validate", response_model=ExpertModeValidation)
+async def validate_expert_overrides(
+    request: ExpertModeRequest
+):
+    """
+    Validate expert mode overrides without calculating.
+
+    Returns warnings for:
+    - ap reference conflicts
+    - Aggressive parameters (> 150% of base)
+    - Unsafe combinations
+    """
+    validation = expert_service.validate_overrides(request.overrides)
+    return validation
+```
+
+**3.5.4 Export Endpoints (api/v1/endpoints/export.py)**
+
+```python
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from typing import List
+import io
+
+from services.export import ExportService
+from models.schemas import (
+    ExportRequest,
+    ExportFormat
+)
+
+router = APIRouter(prefix="/export", tags=["export"])
+export_service = ExportService()
+
+
+@router.post("/fusion")
+async def export_to_fusion(
+    request: ExportRequest
+):
+    """
+    Export calculation results to Fusion 360 .tools file.
+
+    Creates ZIP with:
+    - tools.json (with 13 expressions per preset)
+    - Proper preset naming
+    - Full parameter set
+
+    Returns binary ZIP file for download.
+    """
+    try:
+        # Generate .tools file
+        tools_file = await export_service.create_fusion_export(request.results)
+
+        # Return as download
+        return StreamingResponse(
+            io.BytesIO(tools_file),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=cnc_presets_{request.batch_id}.tools"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Export failed: {str(e)}"
+        )
+
+
+@router.post("/csv")
+async def export_to_csv(request: ExportRequest):
+    """Export results to CSV format."""
+    pass
+
+
+@router.post("/excel")
+async def export_to_excel(request: ExportRequest):
+    """Export results to Excel (XLSX) format."""
+    pass
+
+
+@router.post("/json")
+async def export_to_json(request: ExportRequest):
+    """Export results to JSON format."""
+    pass
+```
+
+---
+
+### 3.6 Celery Worker Configuration
+
+**workers/celery_app.py:**
+
+```python
+from celery import Celery
+from config import settings
+
+# Create Celery app
+celery_app = Celery(
+    "cnc_calculator",
+    broker=settings.CELERY_BROKER_URL,
+    backend=settings.CELERY_RESULT_BACKEND
+)
+
+# Configuration
+celery_app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="UTC",
+    enable_utc=True,
+    task_track_started=True,
+    task_time_limit=300,  # 5 minutes max
+    worker_prefetch_multiplier=1,
+    worker_max_tasks_per_child=100,
+)
+```
+
+**workers/tasks.py:**
+
+```python
+from celery import Task
+from celery.utils.log import get_task_logger
+
+from workers.celery_app import celery_app
+from services.calculation import CalculationService
+from models.schemas import CalculationRequest
+
+logger = get_task_logger(__name__)
+calculation_service = CalculationService()
+
+
+class ProgressTask(Task):
+    """Base task with progress reporting."""
+
+    def update_progress(self, current: int, total: int, current_preset: str = None):
+        """Update task progress."""
+        self.update_state(
+            state='STARTED',
+            meta={
+                'progress': int((current / total) * 100),
+                'current': current,
+                'total': total,
+                'current_preset': current_preset
+            }
+        )
+
+
+@celery_app.task(base=ProgressTask, bind=True)
+def calculate_presets_async(self, request_data: dict):
+    """
+    Async calculation task.
+
+    Reports progress as it processes each preset.
+    """
+    logger.info(f"Starting async calculation task {self.request.id}")
+
+    # Parse request
+    request = CalculationRequest(**request_data)
+
+    # Calculate total presets
+    total_presets = len(request.tool_ids) * len(request.materials) * len(request.operations)
+    logger.info(f"Total presets to calculate: {total_presets}")
+
+    results = []
+    current = 0
+
+    try:
+        # Process each preset
+        for tool_id in request.tool_ids:
+            for material in request.materials:
+                for operation in request.operations:
+                    # Update progress
+                    current += 1
+                    preset_name = f"{material}_{operation}"
+                    self.update_progress(current, total_presets, preset_name)
+
+                    # Calculate
+                    result = calculation_service.calculate_single_preset(
+                        tool_id=tool_id,
+                        material=material,
+                        operation=operation,
+                        coating=request.coating,
+                        surface_quality=request.surface_quality,
+                        coolant=request.coolant
+                    )
+
+                    results.append(result)
+
+                    logger.info(f"Calculated preset {current}/{total_presets}: {preset_name}")
+
+        logger.info(f"Calculation completed successfully. {len(results)} presets calculated.")
+        return {
+            'success': True,
+            'total_presets': len(results),
+            'results': [r.dict() for r in results]
+        }
+
+    except Exception as e:
+        logger.error(f"Calculation failed: {str(e)}", exc_info=True)
+        raise
+```
+
+---
+
+
 
 ## TEIL 4: FRONTEND-ARCHITEKTUR (Zusammenfassung)
 
@@ -3128,7 +3901,1640 @@ Screen 7: Export Dialog (Fusion CSV priority)
 Screen 8: Expert Mode (Global Slider + Individual Parameters)
 ```
 
-### 4.4 State Management
+---
+
+## 4.4 DETAILED SCREEN SPECIFICATIONS
+
+### 4.4.1 Screen 1: Tool Import with Smart Preset Detection
+
+**Purpose:** Import Fusion 360 .tools file and automatically detect existing presets
+
+**Layout:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ [← Back] Step 1 of 6: Import Tools                           │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  📁 Import Fusion 360 Tool Library                           │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                                                         │ │
+│  │           Drag & Drop .tools file here                 │ │
+│  │                    or                                   │ │
+│  │              [Browse Files...]                          │ │
+│  │                                                         │ │
+│  │  Supported: .tools (Fusion 360 Tool Library ZIP)      │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                               │
+│  ℹ️  What happens during import:                            │
+│  1. Extract tools.json from ZIP archive                     │
+│  2. Parse tool geometries (DC, LCF, NOF, etc.)              │
+│  3. Calculate L/D ratios for stability analysis             │
+│  4. Detect existing presets (Smart Detection)               │
+│  5. Extract material + operation from preset names          │
+│  6. Pre-select materials and operations for next screens    │
+│                                                               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**After Upload - Analysis Results:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ⏳ Importing and analyzing...                                │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│ ✓ Parsed 13 tools from Fusion 360 Library                   │
+│ ✓ Validated all geometries                                  │
+│ ✓ Calculated L/D ratios                                     │
+│ ✓ Detecting existing presets...                             │
+│                                                               │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│ 🔍 SMART PRESET DETECTION RESULTS                           │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                               │
+│ 📌 T1 - Planfräser Ø30mm (3 flutes)                        │
+│    ✓ Found 6 existing presets:                              │
+│                                                               │
+│    Materials detected (sorted by hardness):                  │
+│    • Softwood    ← WoodS_Face_Finish, WoodS_Face_Rough      │
+│    • Hardwood    ← WoodH_Face_Finish, WoodH_Face_Rough      │
+│    • Aluminium   ← Alu_Face_Finish, Alu_Face_Rough          │
+│                                                               │
+│    Operations detected:                                      │
+│    • FACE_ROUGH  (Schruppen)                                │
+│    • FACE_FINISH (Schlichten)                               │
+│                                                               │
+│    → ✅ Pre-selected: 3 materials × 2 operations = 6 presets│
+│    → 💾 Reference values stored for Mathematical Workbook   │
+│                                                               │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                               │
+│ 📌 T3 - End Mill Ø6mm (2 flutes)                           │
+│    ⚠️  No presets found                                     │
+│                                                               │
+│    → 🎯 Default pre-selection: Aluminium only               │
+│    → 🎯 Default operations: FACE_FINISH, SLOT_FINISH        │
+│                                                               │
+│ SUMMARY:                                                      │
+│ ✓ 13 tools imported successfully                            │
+│ ✓ 6 presets detected (covering 1 tool)                      │
+│ ✓ 12 tools use default configuration                        │
+│ • 0 import errors                                            │
+│                                                               │
+│ [Continue to Tool Selection →]                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Smart Preset Detection Logic:**
+
+```python
+# Preset Name Parser
+FUSION_MATERIAL_MAP = {
+    'WoodS': 'Softwood',
+    'WoodH': 'Hardwood',
+    'Wood': 'Hardwood',
+    'Alu': 'Aluminium',
+    'Brass': 'Brass',
+    'Acry': 'Acrylic',
+    'Cu': 'Copper',
+    'Steel': 'Steel_Mild',
+    'V2A': 'Steel_Stainless',
+    'Ti': 'Titanium'
+}
+
+FUSION_OPERATION_MAP = {
+    'Face_Rough': 'FACE_ROUGH',
+    'Face_Finish': 'FACE_FINISH',
+    'Slot_Rough': 'SLOT_ROUGH',
+    'Slot_Finish': 'SLOT_FINISH',
+    'Slot_Full': 'SLOT_FULL',
+    'Slot_Trochoidal': 'SLOT_TROCHOIDAL',
+    'Chamfer': 'GEOMETRY_CHAMFER',
+    'Radius': 'GEOMETRY_RADIUS',
+    'Ball': 'GEOMETRY_BALL',
+    'Adaptive': 'SPECIAL_ADAPTIVE',
+    'Plunge': 'SPECIAL_PLUNGE',
+    'Drill': 'SPECIAL_DRILL'
+}
+
+def parse_preset_name(name: str) -> Optional[dict]:
+    """
+    Parses Fusion 360 preset names.
+
+    Examples:
+        "WoodS_Face_Rough" → {'material': 'Softwood', 'operation': 'FACE_ROUGH'}
+        "Alu_Face_Finish" → {'material': 'Aluminium', 'operation': 'FACE_FINISH'}
+        "V2A_Slot_Trochoidal" → {'material': 'Steel_Stainless', 'operation': 'SLOT_TROCHOIDAL'}
+    """
+    if not name or '_' not in name:
+        return None
+
+    parts = name.split('_')
+    material_abbr = parts[0]
+    operation_name = '_'.join(parts[1:])
+
+    material = FUSION_MATERIAL_MAP.get(material_abbr)
+    operation = FUSION_OPERATION_MAP.get(operation_name)
+
+    if not material or not operation:
+        return None
+
+    return {
+        'material': material,
+        'operation': operation
+    }
+
+
+def detect_presets(tool: Tool) -> PresetAnalysis:
+    """
+    Analyzes tool for existing presets and creates pre-selection.
+
+    Returns:
+        PresetAnalysis with detected materials, operations, and reference values
+    """
+    detected_presets = []
+    materials = set()
+    operations = set()
+    reference_values = {}
+
+    # Parse each preset in tool
+    for preset in tool.presets:
+        parsed = parse_preset_name(preset.name)
+        if parsed:
+            detected_presets.append({
+                'name': preset.name,
+                'material': parsed['material'],
+                'operation': parsed['operation']
+            })
+            materials.add(parsed['material'])
+            operations.add(parsed['operation'])
+
+            # Store reference cutting data for Mathematical Workbook
+            reference_values[preset.name] = {
+                'vc': preset.cutting_data.get('vc'),
+                'n': preset.cutting_data.get('n'),
+                'fz': preset.cutting_data.get('fz'),
+                'vf': preset.cutting_data.get('vf'),
+                'ae': preset.cutting_data.get('ae'),
+                'ap': preset.cutting_data.get('ap')
+            }
+
+    # Sort materials by hardness
+    materials_sorted = sorted(
+        materials,
+        key=lambda m: MATERIAL_HARDNESS_ORDER.get(m, 999)
+    )
+
+    # Sort operations by category and type
+    operations_sorted = sorted(
+        operations,
+        key=lambda o: OPERATION_SORT_ORDER.get(o, 999)
+    )
+
+    return PresetAnalysis(
+        has_presets=len(detected_presets) > 0,
+        detected_presets=detected_presets,
+        pre_selected_materials=materials_sorted,
+        pre_selected_operations=operations_sorted,
+        reference_values=reference_values
+    )
+```
+
+**User Interactions:**
+
+1. **Drag & Drop:**
+   - Hover effect on drop zone
+   - Visual feedback during upload
+   - Progress indicator for large files
+
+2. **Analysis Phase:**
+   - Animated spinner during parsing
+   - Real-time status updates
+   - Estimated time remaining
+
+3. **Results Display:**
+   - Expandable tool sections
+   - Hover tooltips for detected presets
+   - Visual indicators (✓ detected, ⚠️ defaults)
+
+4. **Continue:**
+   - Button enabled only after successful import
+   - Preserves all detection data in state
+   - Navigates to Tool Selection screen
+
+**State Changes:**
+
+```typescript
+interface ImportState {
+  status: 'idle' | 'uploading' | 'parsing' | 'complete' | 'error';
+  tools: Tool[];
+  detectedPresets: PresetAnalysis[];
+  error: string | null;
+}
+
+// After successful import
+const importState = {
+  status: 'complete',
+  tools: [...], // 13 tools parsed
+  detectedPresets: [
+    {
+      toolId: 'T1',
+      hasPresets: true,
+      detectedPresets: [/* ... */],
+      preSelectedMaterials: ['Softwood', 'Hardwood', 'Aluminium'],
+      preSelectedOperations: ['FACE_ROUGH', 'FACE_FINISH'],
+      referenceValues: {/* ... */}
+    },
+    // ... rest of tools
+  ],
+  error: null
+};
+```
+
+**Validation Rules:**
+
+- ✅ File must be valid ZIP archive
+- ✅ Must contain `tools.json` at root
+- ✅ JSON must have valid schema
+- ✅ At least 1 tool required
+- ✅ All geometries must be valid (DC > 0, etc.)
+- ⚠️ Missing presets → use defaults (not an error)
+
+**Error Handling:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ❌ Import Failed                                             │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│ Error: Invalid tools.json format                             │
+│                                                               │
+│ Details:                                                      │
+│ • Expected "tools" array at root                             │
+│ • Found invalid JSON syntax at line 42                       │
+│                                                               │
+│ [Try Another File] [View Documentation]                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.4.2 Screen 2: Tool Selection with Multi-Select
+
+**Purpose:** Select which tools to calculate presets for
+
+**Layout:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ [← Back] Step 2 of 6: Select Tools                           │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  [🔍 Search tools...] [Filter: All Types ▼] [Sort: Number ▼]│
+│  [☐ Select All]  0 of 13 tools selected                      │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ [☐] T1 - Planfräser Ø30mm (3 flutes)                  │ │
+│  │     DC: 30mm | LCF: 8mm | L/D: 0.27                   │ │
+│  │     💾 6 presets detected                              │ │
+│  │     [Softwood] [Hardwood] [Aluminium]                  │ │
+│  ├────────────────────────────────────────────────────────┤ │
+│  │ [☐] T2 - End Mill Ø12mm (4 flutes)                    │ │
+│  │     DC: 12mm | LCF: 30mm | L/D: 2.5                   │ │
+│  │     ⚠️  No presets (will use defaults)                │ │
+│  │     [Aluminium]                                         │ │
+│  ├────────────────────────────────────────────────────────┤ │
+│  │ [☐] T3 - Ball Nose Ø6mm (2 flutes)                    │ │
+│  │     DC: 6mm | LCF: 15mm | L/D: 2.5                    │ │
+│  │     ⚠️  High L/D ratio (reduced stability)            │ │
+│  │     [Aluminium]                                         │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                               │
+│  [Cancel] [Continue with 0 tools →] (disabled)              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+
+1. **Multi-Select:**
+   - Individual checkboxes per tool
+   - "Select All" toggle
+   - Visual count of selected tools
+   - Continue button shows count
+
+2. **Search & Filter:**
+   - Search by tool number, name, diameter
+   - Filter by tool type (End Mill, Ball Nose, etc.)
+   - Filter by L/D ratio range
+   - Filter by preset status (detected/defaults)
+
+3. **Visual Indicators:**
+   - 💾 = Presets detected
+   - ⚠️ = Warnings (high L/D, no presets, etc.)
+   - Material tags show detected materials
+
+4. **Sorting:**
+   - By tool number (default)
+   - By diameter (ascending/descending)
+   - By L/D ratio
+   - By preset count
+
+**User Interactions:**
+
+```typescript
+interface ToolSelectionState {
+  selectedToolIds: Set<string>;
+  searchQuery: string;
+  filters: {
+    toolType: string | null;
+    ldRatio: { min: number; max: number } | null;
+    presetStatus: 'all' | 'detected' | 'defaults';
+  };
+  sortBy: 'number' | 'diameter' | 'ld_ratio' | 'preset_count';
+  sortDirection: 'asc' | 'desc';
+}
+
+// Toggle individual tool
+const toggleTool = (toolId: string) => {
+  setSelectedToolIds(prev => {
+    const next = new Set(prev);
+    if (next.has(toolId)) {
+      next.delete(toolId);
+    } else {
+      next.add(toolId);
+    }
+    return next;
+  });
+};
+
+// Select all visible tools
+const selectAll = () => {
+  const visibleToolIds = getFilteredTools().map(t => t.id);
+  setSelectedToolIds(new Set(visibleToolIds));
+};
+
+// Clear selection
+const clearAll = () => {
+  setSelectedToolIds(new Set());
+};
+```
+
+---
+
+### 4.4.3 Screen 3: Material Selection per Tool
+
+**Purpose:** Assign materials to each selected tool
+
+**Layout:**
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ [← Back] Step 3 of 6: Select Materials per Tool              │
+├──────────────────────────────────────────────────────────────┤
+│                                                               │
+│  ℹ️  Assign materials for each selected tool                │
+│  Materials sorted by machining hardness (soft→hard)          │
+│                                                               │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  📌 T1 - Planfräser Ø30mm (3 flutes)                        │
+│  💾 Auto-detected: 3 materials from existing presets         │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                               │
+│  [☑] Softwood (Weichholz)      ← From: WoodS_*              │
+│       vc: 800-1200 m/min                                      │
+│  [☑] Hardwood (Hartholz)       ← From: WoodH_*              │
+│       vc: 600-900 m/min                                       │
+│  [☑] Aluminium (6061, 7075)    ← From: Alu_*                │
+│       vc: 200-400 m/min                                       │
+│  [☐] Brass (Messing)                                         │
+│       vc: 150-250 m/min                                       │
+│  [☐] Acrylic (PMMA)                                          │
+│       vc: 300-600 m/min                                       │
+│  [☐] Steel Mild (Baustahl)                                   │
+│       vc: 100-180 m/min                                       │
+│  [☐] Steel Stainless (V2A)                                   │
+│       vc: 80-140 m/min                                        │
+│                                                               │
+│  Summary: 3 materials selected                                │
+│                                                               │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│  📌 T2 - End Mill Ø12mm (4 flutes)                          │
+│  🎯 Default pre-selection: Aluminium                         │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                                               │
+│  [☐] Softwood (Weichholz)                                    │
+│  [☐] Hardwood (Hartholz)                                     │
+│  [☑] Aluminium (6061, 7075)    ← Default                    │
+│  [☐] Brass (Messing)                                         │
+│  [☐] Acrylic (PMMA)                                          │
+│  [☐] Steel Mild (Baustahl)                                   │
+│  [☐] Steel Stainless (V2A)                                   │
+│                                                               │
+│  Summary: 1 material selected                                 │
+│                                                               │
+│  [← Back] [Continue: 4 materials total →]                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Material Sorting Order (ALWAYS):**
+
+```python
+MATERIALS_BY_HARDNESS = [
+    'Softwood',         # 1 - Easiest to machine
+    'Hardwood',         # 2
+    'Aluminium',        # 3
+    'Brass',            # 4
+    'Acrylic',          # 5
+    'Steel_Mild',       # 6
+    'Steel_Stainless'   # 7 - Hardest to machine
+]
+```
+
+**Key Features:**
+
+1. **Pre-Selection from Detection:**
+   - Auto-check detected materials
+   - Visual indicator showing source (← From: Alu_*)
+   - User can modify (add/remove)
+
+2. **Material Properties Display:**
+   - Typical vc range for each material
+   - Hardness ranking
+   - Common use cases
+
+3. **Batch Operations:**
+   - "Apply to all tools" button
+   - "Copy from T1" button
+   - "Clear all" button
+
+4. **Validation:**
+   - At least 1 material per tool required
+   - Warning if tool unsuitable for material
+
+**State Management:**
+
+```typescript
+interface MaterialSelectionState {
+  materialsByTool: Record<string, Set<string>>;
+  // Example:
+  // {
+  //   'T1': Set(['Softwood', 'Hardwood', 'Aluminium']),
+  //   'T2': Set(['Aluminium'])
+  // }
+}
+
+// Apply material to tool
+const toggleMaterial = (toolId: string, material: string) => {
+  setMaterialsByTool(prev => {
+    const toolMaterials = new Set(prev[toolId] || []);
+    if (toolMaterials.has(material)) {
+      toolMaterials.delete(material);
+    } else {
+      toolMaterials.add(material);
+    }
+    return {
+      ...prev,
+      [toolId]: toolMaterials
+    };
+  });
+};
+
+// Copy materials from one tool to another
+const copyMaterialsToAll = (sourceToolId: string) => {
+  const sourceMaterials = materialsByTool[sourceToolId];
+  const updates: Record<string, Set<string>> = {};
+
+  selectedToolIds.forEach(toolId => {
+    updates[toolId] = new Set(sourceMaterials);
+  });
+
+  setMaterialsByTool(prev => ({ ...prev, ...updates }));
+};
+```
+
+---
+
+### 4.4.4 Screen 4: Operation Matrix (Tabular Layout)
+
+**Purpose:** Select operations for each tool-material combination
+
+**Layout:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ [← Back] Step 4 of 6: Operations                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  📌 T1 - Planfräser Ø30mm (3 flutes)                                │
+│  [SW] [HW] [Alu]                                                     │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                       │
+│  ┌───────────┬────────────────┬──────────────┬───────────────────┐  │
+│  │   FACE    │     SLOT       │   GEOMETRY   │     SPECIAL       │  │
+│  │ ▓▓▓▓▓▓▓▓  │                │              │                   │  │
+│  ├─────┬─────┼────┬────┬──────┼────┬────┬────┼────┬────┬────────┤  │
+│  │Rough│Finis│Roug│Fini│ Full │Troc│Cham│Radi│Ball│Adap│Plung│Dr│  │
+│  │  h  │  h  │  h │  sh│      │hoid│ fer│ us │    │ tive│  e  │il│  │
+│  ├─────┼─────┼────┼────┼──────┼────┼────┼────┼────┼────┼─────┼──┤  │
+│  │ ☑   │ ☑   │ ☐  │ ☐  │  ☐   │ ☐  │ ☐  │ ☐  │ ☐  │ ☐  │  ☐  │☐ │  │
+│  └─────┴─────┴────┴────┴──────┴────┴────┴────┴────┴────┴─────┴──┘  │
+│                                                                       │
+│  Summary: 2 operations × 3 materials = 6 presets                    │
+│                                                                       │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│  📌 T2 - End Mill Ø12mm (4 flutes)                                  │
+│  [Alu]                                                               │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                       │
+│  ┌───────────┬────────────────┬──────────────┬───────────────────┐  │
+│  │   FACE    │     SLOT       │   GEOMETRY   │     SPECIAL       │  │
+│  ├─────┬─────┼────┬────┬──────┼────┬────┬────┼────┬────┬────────┤  │
+│  │Rough│Finis│Roug│Fini│ Full │Troc│Cham│Radi│Ball│Adap│Plung│Dr│  │
+│  ├─────┼─────┼────┼────┼──────┼────┼────┼────┼────┼────┼─────┼──┤  │
+│  │ ☐   │ ☑   │ ☐  │ ☑  │  ☐   │ ☐  │ ☐  │ ☐  │ ☐  │ ☐  │  ☐  │☐ │  │
+│  └─────┴─────┴────┴────┴──────┴────┴────┴────┴────┴────┴─────┴──┘  │
+│                                                                       │
+│  Summary: 2 operations × 1 material = 2 presets                     │
+│                                                                       │
+│  [← Back] [Calculate 8 Presets →]                                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+
+1. **Group Toggle:**
+   - Click on group header (FACE, SLOT, etc.) toggles all operations in group
+   - Visual feedback: Green background when fully selected
+   - Partial selection indicator (◐) when some selected
+
+2. **Material Tags:**
+   - Compact display: [SW] = Softwood, [HW] = Hardwood, [Alu] = Aluminium
+   - Shows which materials will be calculated for this tool
+
+3. **Operation Groups:**
+
+```typescript
+const OPERATION_GROUPS = [
+  {
+    id: 'FACE',
+    name: 'FACE',
+    color: '#fb923c', // Orange
+    operations: ['FACE_ROUGH', 'FACE_FINISH']
+  },
+  {
+    id: 'SLOT',
+    name: 'SLOT',
+    color: '#3b82f6', // Blue
+    operations: ['SLOT_ROUGH', 'SLOT_FINISH', 'SLOT_FULL', 'SLOT_TROCHOIDAL']
+  },
+  {
+    id: 'GEOMETRY',
+    name: 'GEOMETRY',
+    color: '#06b6d4', // Cyan
+    operations: ['GEOMETRY_CHAMFER', 'GEOMETRY_RADIUS', 'GEOMETRY_BALL']
+  },
+  {
+    id: 'SPECIAL',
+    name: 'SPECIAL',
+    color: '#a855f7', // Purple
+    operations: ['SPECIAL_ADAPTIVE', 'SPECIAL_PLUNGE', 'SPECIAL_DRILL']
+  }
+];
+```
+
+4. **Preset Counter:**
+   - Real-time calculation of total presets
+   - Formula: (selected operations) × (selected materials) × (selected tools)
+
+**User Interactions:**
+
+```typescript
+interface OperationSelectionState {
+  operationsByTool: Record<string, Set<string>>;
+  // Example:
+  // {
+  //   'T1': Set(['FACE_ROUGH', 'FACE_FINISH']),
+  //   'T2': Set(['FACE_FINISH', 'SLOT_FINISH'])
+  // }
+}
+
+// Toggle single operation
+const toggleOperation = (toolId: string, operationId: string) => {
+  setOperationsByTool(prev => {
+    const toolOps = new Set(prev[toolId] || []);
+    if (toolOps.has(operationId)) {
+      toolOps.delete(operationId);
+    } else {
+      toolOps.add(operationId);
+    }
+    return {
+      ...prev,
+      [toolId]: toolOps
+    };
+  });
+};
+
+// Toggle entire group
+const toggleGroup = (toolId: string, groupId: string) => {
+  const group = OPERATION_GROUPS.find(g => g.id === groupId);
+  if (!group) return;
+
+  const toolOps = new Set(operationsByTool[toolId] || []);
+  const groupOps = new Set(group.operations);
+
+  // Check if all group operations are selected
+  const allSelected = group.operations.every(op => toolOps.has(op));
+
+  if (allSelected) {
+    // Deselect all
+    group.operations.forEach(op => toolOps.delete(op));
+  } else {
+    // Select all
+    group.operations.forEach(op => toolOps.add(op));
+  }
+
+  setOperationsByTool(prev => ({
+    ...prev,
+    [toolId]: toolOps
+  }));
+};
+
+// Calculate total presets
+const getTotalPresets = (): number => {
+  let total = 0;
+
+  selectedToolIds.forEach(toolId => {
+    const materials = materialsByTool[toolId]?.size || 0;
+    const operations = operationsByTool[toolId]?.size || 0;
+    total += materials * operations;
+  });
+
+  return total;
+};
+```
+
+**Validation:**
+
+- ⚠️ Warning if SLOT_FULL selected for high L/D ratio tools
+- ⚠️ Warning if SLOT_TROCHOIDAL selected but no CAM support
+- ⚠️ Warning if > 100 presets (long calculation time)
+
+---
+
+### 4.4.5 Screen 5: Coating + Surface Quality + Coolant
+
+*(Already detailed in Section 2.4 - Coating System)*
+
+---
+
+### 4.4.6 Screen 6: Calculation Progress
+
+**Purpose:** Show real-time calculation progress
+
+**Layout:**
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ Calculating Presets...                                              │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ⏳ Running calculations...                                         │
+│                                                                      │
+│  Progress: 3 of 8 presets calculated (37%)                         │
+│  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 37%      │
+│                                                                      │
+│  ✅ T1 - Planfräser Ø30mm                                          │
+│     • Softwood_Face_Rough  → SAFE ✓                                │
+│     • Softwood_Face_Finish → SAFE ✓                                │
+│     • Hardwood_Face_Rough  → WARNING ⚠️ (High chip temp)          │
+│                                                                      │
+│  🔄 T2 - End Mill Ø12mm                                            │
+│     • Aluminium_Face_Finish → Calculating...                        │
+│     • Aluminium_Slot_Finish → Queued                                │
+│                                                                      │
+│  Estimated time remaining: 2 seconds                                │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Implementation (WebSocket Updates):**
+
+```typescript
+interface CalculationProgress {
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  completedPresets: number;
+  totalPresets: number;
+  currentPreset: string | null;
+  results: PresetResult[];
+  estimatedTimeRemaining: number; // seconds
+}
+
+// WebSocket connection
+const ws = new WebSocket('ws://localhost:8000/ws/calculation/{taskId}');
+
+ws.onmessage = (event) => {
+  const progress: CalculationProgress = JSON.parse(event.data);
+
+  // Update UI
+  setProgress(progress);
+
+  // Auto-redirect when complete
+  if (progress.status === 'completed') {
+    setTimeout(() => {
+      navigate('/results');
+    }, 1000);
+  }
+};
+```
+
+**Features:**
+
+1. **Real-time Updates:**
+   - Progress bar updates as each preset completes
+   - Live status per preset
+   - Estimated time remaining
+
+2. **Validation Status:**
+   - ✅ SAFE (green)
+   - ⚠️ WARNING (yellow)
+   - ❌ UNSAFE (red)
+
+3. **Error Handling:**
+   - Individual preset failures don't stop batch
+   - Error details shown per preset
+   - Option to retry failed presets
+
+---
+
+### 4.4.7 Screen 7: Results Display with Filtering
+
+*(Detailed specifications from DELTA_REQUEST, as shown earlier)*
+
+**Key Features:**
+
+- Bidirectional scrolling (horizontal + vertical)
+- Sortable columns with custom preset name sorting
+- Status filter toggle buttons
+- Expandable rows for detailed view
+- Export buttons
+
+---
+
+### 4.4.8 Screen 8: Expert Mode with Parameter Overrides
+
+*(Detailed in Section 4.6 below)*
+
+---
+
+## 4.5 EXPERT MODE UI
+
+### 4.5.1 Overview
+
+**Purpose:** Allow advanced users to override calculated parameters with full control
+
+**Access:** Available in two places:
+1. During operation selection (per-tool overrides)
+2. After results are calculated (global adjustments)
+
+**Philosophy:** Progressive disclosure - hidden by default, powerful when needed
+
+---
+
+### 4.5.2 Expert Mode Panel - Detailed Layout
+
+**Location:** Screen 4 (Operation Matrix) - Expandable per Tool
+
+**Initial State (Collapsed):**
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 📌 T2 - End Mill Ø12mm Z4 • DC=12mm • LCF=30mm • L/D=2.5     │
+│ [Alu]                                                          │
+│                                                                 │
+│ [⚙️  Show Expert Mode]  ← Toggle Button                       │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Expanded State (Full Expert Mode):**
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 📌 T2 - End Mill Ø12mm Z4 • DC=12mm • LCF=30mm • L/D=2.5     │
+│ [Alu]                                                          │
+│                                                                 │
+│ [⚙️  Hide Expert Mode]                                         │
+│                                                                 │
+│ ┌──────────────────────────────────────────────────────────┐  │
+│ │ ⚙️  EXPERT MODE                                          │  │
+│ │                                                           │  │
+│ │ Selected Operation: FACE_FINISH                          │  │
+│ │                                                           │  │
+│ │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
+│ │ GLOBAL ADJUSTMENT SLIDER                                 │  │
+│ │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
+│ │                                                           │  │
+│ │  Conservative   ←────●───────────→   Aggressive          │  │
+│ │      -50%           0%            +50%                    │  │
+│ │                                                           │  │
+│ │  Current: +15% (Moderate Aggressive)                     │  │
+│ │                                                           │  │
+│ │  Effect on all parameters:                               │  │
+│ │  • vc: ×1.15 (faster cutting speed)                      │  │
+│ │  • vf: ×1.15 (faster feed rate)                          │  │
+│ │  • ae: ×1.15 (wider radial engagement)                   │  │
+│ │  • ap: ×1.15 (deeper axial cut)                          │  │
+│ │                                                           │  │
+│ │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
+│ │ AP REFERENCE OVERRIDE                                    │  │
+│ │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
+│ │                                                           │  │
+│ │ ap Reference:                                            │  │
+│ │ ● 🤖 Auto (Recommended)                                  │  │
+│ │   System uses DC for FACE operations                     │  │
+│ │                                                           │  │
+│ │ ○ 📏 Manual Override:                                    │  │
+│ │   [DC ▼] [LCF]                                           │  │
+│ │                                                           │  │
+│ │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
+│ │ INDIVIDUAL PARAMETER OVERRIDES (Optional)                │  │
+│ │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │  │
+│ │                                                           │  │
+│ │ Radial Engagement (ae):                                  │  │
+│ │ [ 9.0 ] mm ← Base: 7.5mm × Global(1.15) × Manual(1.04)  │  │
+│ │ ├──────────────●────────────┤                            │  │
+│ │ 3.75mm (50%)   7.5mm (100%)   15mm (200%)               │  │
+│ │                                                           │  │
+│ │ Axial Depth (ap):                                        │  │
+│ │ [ 4.1 ] mm ← Base: 3.6mm × Global(1.15) × Manual(1.00)  │  │
+│ │ ├──────────────●────────────┤                            │  │
+│ │ 1.8mm (50%)    3.6mm (100%)   7.2mm (200%)              │  │
+│ │                                                           │  │
+│ │ Chip Load (fz):                                          │  │
+│ │ [ 0.09 ] mm/tooth ← Base: 0.08mm × Global(1.15)         │  │
+│ │ ├──────────────●────────────┤                            │  │
+│ │ 0.04mm (50%)   0.08mm (100%)  0.16mm (200%)             │  │
+│ │                                                           │  │
+│ │ Cutting Speed (vc):                                      │  │
+│ │ [ 138 ] m/min ← Base: 120 m/min × Global(1.15)          │  │
+│ │ ├──────────────●────────────┤                            │  │
+│ │ 60 m/min (50%) 120 m/min (100%) 240 m/min (200%)        │  │
+│ │                                                           │  │
+│ │ [Reset All] [Apply Overrides]                            │  │
+│ └──────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 4.5.3 Global Adjustment Slider
+
+**Concept:** Single slider affects ALL parameters proportionally
+
+**Range:** -50% to +50%
+
+**Default:** 0% (no adjustment)
+
+**Use Cases:**
+- **Conservative (-20% to -50%):** First time using tool, unknown material hardness, safety priority
+- **Standard (0%):** Calculated safe values
+- **Moderate (+10% to +25%):** Experienced user, proven setup, time optimization
+- **Aggressive (+30% to +50%):** Production environment, tool wear acceptable, maximum MRR
+
+**Implementation:**
+
+```typescript
+interface ExpertModeState {
+  globalAdjustment: number; // -50 to +50
+  apReferenceOverride: 'AUTO' | 'DC' | 'LCF';
+  individualOverrides: {
+    ae?: number;
+    ap?: number;
+    fz?: number;
+    vc?: number;
+  };
+}
+
+// Apply global adjustment
+function applyGlobalAdjustment(baseValue: number, adjustment: number): number {
+  const factor = 1 + (adjustment / 100);
+  return baseValue * factor;
+}
+
+// Example
+const vc_base = 120; // m/min
+const global = 15; // +15%
+const vc_adjusted = applyGlobalAdjustment(vc_base, global);
+// Result: 120 × 1.15 = 138 m/min
+```
+
+**Visual Feedback:**
+
+```tsx
+<div className="global-slider">
+  <label>Global Adjustment</label>
+  <input
+    type="range"
+    min="-50"
+    max="50"
+    value={globalAdjustment}
+    onChange={(e) => setGlobalAdjustment(parseInt(e.target.value))}
+    className={`slider ${
+      globalAdjustment < -20 ? 'conservative' :
+      globalAdjustment > 20 ? 'aggressive' :
+      'standard'
+    }`}
+  />
+  <div className="slider-labels">
+    <span className="conservative">Conservative</span>
+    <span className="standard">0%</span>
+    <span className="aggressive">Aggressive</span>
+  </div>
+  <div className="slider-value">
+    Current: {globalAdjustment > 0 ? '+' : ''}{globalAdjustment}%
+    {globalAdjustment < -20 && ' (Very Conservative)'}
+    {globalAdjustment > 20 && ' (Very Aggressive)'}
+  </div>
+  <div className="slider-effects">
+    Effect on all parameters:
+    <ul>
+      <li>vc: ×{(1 + globalAdjustment/100).toFixed(2)}</li>
+      <li>vf: ×{(1 + globalAdjustment/100).toFixed(2)}</li>
+      <li>ae: ×{(1 + globalAdjustment/100).toFixed(2)}</li>
+      <li>ap: ×{(1 + globalAdjustment/100).toFixed(2)}</li>
+    </ul>
+  </div>
+</div>
+```
+
+---
+
+### 4.5.4 AP Reference Override
+
+**Purpose:** Allow manual control of axial depth reference (DC vs LCF)
+
+**Default Behavior (AUTO):**
+
+```python
+def get_ap_reference_auto(operation: OperationType, geometry: Geometry) -> str:
+    """
+    Automatic ap reference determination.
+    """
+    ld_ratio = geometry.LCF / geometry.DC
+
+    # FACE operations always use DC
+    if operation in ['FACE_ROUGH', 'FACE_FINISH']:
+        return 'DC'
+
+    # SLOT_FULL always uses DC
+    if operation == 'SLOT_FULL':
+        return 'DC'
+
+    # SPECIAL_ADAPTIVE always uses LCF
+    if operation == 'SPECIAL_ADAPTIVE':
+        return 'LCF'
+
+    # Dynamic based on L/D ratio
+    if ld_ratio < 1.0:
+        return 'DC'  # Short tool
+    else:
+        return 'LCF'  # Long tool
+```
+
+**Manual Override UI:**
+
+```
+ap Reference:
+● 🤖 Auto (Recommended)
+  System uses DC for FACE operations
+
+○ 📏 Manual Override:
+  [DC ▼] [LCF]
+```
+
+**When user selects Manual Override:**
+
+```
+ap Reference:
+○ 🤖 Auto (Recommended)
+
+● 📏 Manual Override:
+  ● DC   ○ LCF
+
+💡 Current selection: DC
+   Base value: 30% of 12mm = 3.6mm
+```
+
+**With Warning (if conflicts with best practice):**
+
+```
+ap Reference:
+○ 🤖 Auto (Recommended)
+
+● 📏 Manual Override:
+  ○ DC   ● LCF
+
+⚠️  WARNING: Override conflicts with best practices
+
+Recommended: DC (for FACE operations)
+Your override: LCF
+
+Impact:
+• ap = 15mm (50% of 30mm LCF) instead of 3.6mm
+• Risk: Excessive axial load in steel
+• Risk: Tool deflection and chatter
+
+[⚠️  Apply Override Anyway] [✓ Reset to Auto]
+```
+
+**Validation Function:**
+
+```python
+def validate_ap_reference_override(
+    operation: OperationType,
+    geometry: Geometry,
+    override: str
+) -> ValidationResult:
+    """
+    Validates manual ap reference override.
+    """
+    recommended = get_ap_reference_auto(operation, geometry)
+
+    if override == recommended:
+        return ValidationResult(
+            valid=True,
+            severity='INFO',
+            message=f'Manual selection matches recommendation ({override})'
+        )
+
+    # Calculate impact
+    if override == 'LCF':
+        ap_value = geometry.LCF * 0.5  # Assuming 50% factor
+    else:
+        ap_value = geometry.DC * 0.5
+
+    warnings = []
+
+    # FACE operation with LCF is problematic
+    if operation in ['FACE_ROUGH', 'FACE_FINISH'] and override == 'LCF':
+        warnings.append({
+            'severity': 'WARNING',
+            'message': f'FACE operations should use DC reference. '
+                      f'LCF override will result in ap={ap_value:.1f}mm, '
+                      f'which may cause excessive tool deflection.',
+            'recommendation': 'Use DC reference for FACE operations'
+        })
+
+    # Short tool with LCF
+    ld_ratio = geometry.LCF / geometry.DC
+    if ld_ratio < 1.0 and override == 'LCF':
+        warnings.append({
+            'severity': 'CAUTION',
+            'message': f'Short tool (L/D={ld_ratio:.2f}) typically uses DC. '
+                      f'LCF override may be unnecessarily conservative.',
+            'recommendation': 'Consider using DC for short tools'
+        })
+
+    return ValidationResult(
+        valid=True,  # Allow but warn
+        severity='WARNING' if warnings else 'INFO',
+        warnings=warnings
+    )
+```
+
+---
+
+### 4.5.5 Individual Parameter Overrides
+
+**Purpose:** Fine-tune individual parameters beyond global adjustment
+
+**Calculation Order:**
+
+```
+Final Value = Base Value × Global Factor × Individual Override
+```
+
+**Example:**
+
+```
+ae calculation:
+1. Base: 7.5mm (from operation + material)
+2. Global: ×1.15 (+15% aggressive)
+   = 7.5 × 1.15 = 8.625mm
+3. Individual: ×1.04 (+4% manual adjustment)
+   = 8.625 × 1.04 = 8.97mm ≈ 9.0mm
+```
+
+**UI Components:**
+
+```tsx
+interface ParameterOverride {
+  name: string;
+  unit: string;
+  baseValue: number;
+  globalAdjusted: number;
+  manualOverride: number;
+  finalValue: number;
+  min: number;
+  max: number;
+}
+
+const ParameterSlider: React.FC<{ param: ParameterOverride }> = ({ param }) => {
+  return (
+    <div className="parameter-override">
+      <label>{param.name} ({param.unit})</label>
+
+      {/* Formula display */}
+      <div className="formula">
+        [{param.finalValue.toFixed(2)}] {param.unit} ←
+        Base: {param.baseValue.toFixed(2)}{param.unit} ×
+        Global({(globalAdjustment/100 + 1).toFixed(2)}) ×
+        Manual({param.manualOverride.toFixed(2)})
+      </div>
+
+      {/* Slider */}
+      <input
+        type="range"
+        min={param.min}
+        max={param.max}
+        step="0.01"
+        value={param.manualOverride}
+        onChange={(e) => handleManualOverride(param.name, parseFloat(e.target.value))}
+        className="parameter-slider"
+      />
+
+      {/* Scale markers */}
+      <div className="slider-markers">
+        <span>{(param.baseValue * 0.5).toFixed(2)} (50%)</span>
+        <span>{param.baseValue.toFixed(2)} (100%)</span>
+        <span>{(param.baseValue * 2.0).toFixed(2)} (200%)</span>
+      </div>
+    </div>
+  );
+};
+```
+
+**Parameter Ranges:**
+
+```typescript
+const PARAMETER_RANGES = {
+  ae: {
+    min: 0.5,  // 50% of base
+    max: 2.0,  // 200% of base
+    step: 0.01,
+    displayDecimals: 1
+  },
+  ap: {
+    min: 0.5,
+    max: 2.0,
+    step: 0.01,
+    displayDecimals: 1
+  },
+  fz: {
+    min: 0.5,
+    max: 2.0,
+    step: 0.01,
+    displayDecimals: 3  // More precision for small values
+  },
+  vc: {
+    min: 0.5,
+    max: 2.0,
+    step: 0.01,
+    displayDecimals: 0  // Whole numbers
+  }
+};
+```
+
+---
+
+### 4.5.6 Warnings and Validation
+
+**Real-time Validation:**
+
+As user adjusts parameters, validate against safe ranges:
+
+```typescript
+interface ValidationResult {
+  parameter: string;
+  severity: 'INFO' | 'WARNING' | 'ERROR';
+  message: string;
+  recommendations: string[];
+}
+
+function validateOverride(
+  parameter: string,
+  value: number,
+  baseValue: number,
+  material: string,
+  operation: string
+): ValidationResult {
+  const ratio = value / baseValue;
+
+  // ae validation
+  if (parameter === 'ae') {
+    if (ratio > 1.5) {
+      return {
+        parameter: 'ae',
+        severity: 'WARNING',
+        message: `ae is ${(ratio * 100).toFixed(0)}% of recommended. High radial forces expected.`,
+        recommendations: [
+          'Monitor tool deflection',
+          'Watch for chatter',
+          'Consider reducing if vibrations occur'
+        ]
+      };
+    }
+  }
+
+  // ap validation
+  if (parameter === 'ap') {
+    if (ratio > 1.8) {
+      return {
+        parameter: 'ap',
+        severity: 'ERROR',
+        message: `ap is ${(ratio * 100).toFixed(0)}% of recommended. Tool breakage risk!`,
+        recommendations: [
+          'REDUCE ap immediately',
+          'Maximum safe ap is 150-180% of base',
+          'Consider multiple passes instead'
+        ]
+      };
+    }
+  }
+
+  // vc validation (material-specific)
+  if (parameter === 'vc') {
+    const vcLimits = VC_LIMITS[material];
+    if (value > vcLimits.max) {
+      return {
+        parameter: 'vc',
+        severity: 'WARNING',
+        message: `vc exceeds material limit (${vcLimits.max} m/min for ${material})`,
+        recommendations: [
+          `Reduce vc to < ${vcLimits.max} m/min`,
+          'Risk: Excessive heat and tool wear'
+        ]
+      };
+    }
+  }
+
+  return {
+    parameter,
+    severity: 'INFO',
+    message: 'Parameter within safe range',
+    recommendations: []
+  };
+}
+```
+
+**Display Warnings in UI:**
+
+```tsx
+const WarningBanner: React.FC<{ validation: ValidationResult }> = ({ validation }) => {
+  if (validation.severity === 'INFO') return null;
+
+  const severityClasses = {
+    WARNING: 'warning-banner warning',
+    ERROR: 'warning-banner error'
+  };
+
+  return (
+    <div className={severityClasses[validation.severity]}>
+      <div className="warning-icon">
+        {validation.severity === 'ERROR' ? '🔴' : '⚠️'}
+      </div>
+      <div className="warning-content">
+        <h4>{validation.message}</h4>
+        {validation.recommendations.length > 0 && (
+          <ul>
+            {validation.recommendations.map((rec, i) => (
+              <li key={i}>{rec}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+---
+
+### 4.5.7 Reset and Apply Actions
+
+**Reset Buttons:**
+
+```tsx
+// Reset all to defaults
+<button onClick={handleResetAll} className="btn btn-secondary">
+  Reset All to Defaults
+</button>
+
+// Reset only global
+<button onClick={() => setGlobalAdjustment(0)} className="btn btn-outline">
+  Reset Global Slider
+</button>
+
+// Reset only individual overrides
+<button onClick={handleResetIndividual} className="btn btn-outline">
+  Reset Individual Overrides
+</button>
+```
+
+**Apply Logic:**
+
+```typescript
+function handleApplyOverrides() {
+  // Validate all parameters
+  const validations = validateAllParameters();
+
+  // Check for errors
+  const errors = validations.filter(v => v.severity === 'ERROR');
+  if (errors.length > 0) {
+    showError('Cannot apply overrides with errors. Please fix highlighted parameters.');
+    return;
+  }
+
+  // Check for warnings
+  const warnings = validations.filter(v => v.severity === 'WARNING');
+  if (warnings.length > 0) {
+    // Show confirmation dialog
+    showConfirmDialog({
+      title: 'Warning: Aggressive Parameters',
+      message: `${warnings.length} parameters have warnings. Apply anyway?`,
+      warnings: warnings,
+      onConfirm: () => applyOverrides(),
+      onCancel: () => {}
+    });
+    return;
+  }
+
+  // No issues - apply directly
+  applyOverrides();
+}
+
+function applyOverrides() {
+  // Save to state
+  saveExpertModeSettings({
+    globalAdjustment,
+    apReferenceOverride,
+    individualOverrides
+  });
+
+  // Show success message
+  showSuccess('Expert mode settings applied. Calculations will use your overrides.');
+
+  // Close expert mode panel (optional)
+  setExpertModeOpen(false);
+}
+```
+
+---
+
+### 4.5.8 Persistence and State Management
+
+**State Structure:**
+
+```typescript
+interface ExpertModeSettings {
+  enabled: boolean;
+  perToolSettings: Record<string, ToolExpertSettings>;
+}
+
+interface ToolExpertSettings {
+  globalAdjustment: number;
+  apReferenceOverride: 'AUTO' | 'DC' | 'LCF';
+  parameterOverrides: {
+    ae?: number;
+    ap?: number;
+    fz?: number;
+    vc?: number;
+  };
+  appliedAt: Date;
+}
+
+// Zustand store
+interface ExpertModeStore {
+  settings: ExpertModeSettings;
+  setGlobalAdjustment: (toolId: string, value: number) => void;
+  setApReference: (toolId: string, ref: 'AUTO' | 'DC' | 'LCF') => void;
+  setParameterOverride: (toolId: string, param: string, value: number) => void;
+  resetTool: (toolId: string) => void;
+  resetAll: () => void;
+}
+
+export const useExpertModeStore = create<ExpertModeStore>((set) => ({
+  settings: {
+    enabled: false,
+    perToolSettings: {}
+  },
+
+  setGlobalAdjustment: (toolId, value) => set((state) => ({
+    settings: {
+      ...state.settings,
+      perToolSettings: {
+        ...state.settings.perToolSettings,
+        [toolId]: {
+          ...state.settings.perToolSettings[toolId],
+          globalAdjustment: value
+        }
+      }
+    }
+  })),
+
+  // ... other actions
+}));
+```
+
+**Persistence:**
+
+```typescript
+// Save to localStorage on change
+useEffect(() => {
+  localStorage.setItem('expertMode', JSON.stringify(expertModeSettings));
+}, [expertModeSettings]);
+
+// Load on mount
+useEffect(() => {
+  const saved = localStorage.getItem('expertMode');
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    setExpertModeSettings(parsed);
+  }
+}, []);
+```
+
+---
+
+### 4.5.9 Expert Mode in Results Display
+
+**Show Expert Mode Indicators in Results Table:**
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 📊 Results (8 presets)                                         │
+│ ⚙️  Expert Mode Active: +15% Global Adjustment                │
+├────────────────────────────────────────────────────────────────┤
+│ Preset          │St│vc │  n  │fz │ vf  │ae  │ap  │MRR │Expert│
+│                 │  │m/m│ rpm │mm │mm/mn│% DC│% DC│cm³ │      │
+├─────────────────┼──┼───┼─────┼───┼─────┼────┼────┼────┼──────┤
+│Steel_F_Fin ✓    │✓ │138│3661 │.09│ 988 │75  │30  │24  │ ⚙️   │
+│                 │  │   │     │   │     │    │    │    │+15%  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Expandable Details:**
+
+```
+[Click on ⚙️ icon to show details]
+
+┌────────────────────────────────────────────────────────────────┐
+│ Expert Mode Settings for Steel_Face_Finish                    │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ Global Adjustment: +15%                                        │
+│ ap Reference: DC (Auto)                                        │
+│                                                                 │
+│ Parameter Adjustments:                                         │
+│ ───────────────────────────────────────────────────────────── │
+│ Parameter │ Base  │ Global│ Manual│ Final │ Change            │
+│ ──────────┼───────┼───────┼───────┼───────┼──────────────     │
+│ vc        │ 120   │ ×1.15 │ ×1.00 │ 138   │ +18 m/min (+15%) │
+│ n         │ 3183  │ ×1.15 │ ×1.00 │ 3661  │ +478 rpm (+15%)  │
+│ fz        │ 0.08  │ ×1.15 │ ×1.00 │ 0.09  │ +0.01 mm (+15%)  │
+│ vf        │ 859   │ ×1.15 │ ×1.00 │ 988   │ +129 mm/min      │
+│ ae        │ 9.0   │ ×1.15 │ ×1.00 │ 10.4  │ +1.4 mm (+15%)   │
+│ ap        │ 3.6   │ ×1.15 │ ×1.00 │ 4.1   │ +0.5 mm (+15%)   │
+│                                                                 │
+│ [Edit Expert Mode] [Reset to Defaults]                        │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4.6 MATHEMATICAL WORKBOOK
+
+### 4.6.1 Overview
+
+**Purpose:** Show complete calculation breakdown with all intermediate steps
+
+**Access:** Click "📊 Workbook" button in results screen
+
+**Philosophy:** Educational + transparency - show how every number is calculated
+
+---
+
+### 4.6.2 Workbook Layout
+
+**Full Screen Modal:**
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ [← Back to Results] Mathematical Workbook: Steel_Face_Finish         │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│ 📊 COMPLETE CALCULATION BREAKDOWN                                    │
+│                                                                        │
+│ Tool: T2 - End Mill Ø12mm Z4                                         │
+│ Material: Steel Mild (C45)                                           │
+│ Operation: FACE_FINISH                                                │
+│ Coating: TiAlN (+60%)                                                │
+│ Surface Quality: FINISHING (-20% ae/ap)                             │
+│ Coolant: Flood                                                        │
+│                                                                        │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│ PHASE 1: Material Base Values                                        │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                        │
+│ vc_base (Cutting Speed - Material):                                  │
+│   Material: Steel_Mild                                               │
+│   Base vc: 120 m/min                                                 │
+│   Source: MATERIAL_DATABASE['Steel_Mild']['vc_base']                 │
+│                                                                        │
+│ fz_base (Chip Load - Material):                                      │
+│   Material: Steel_Mild                                               │
+│   DC: 12 mm                                                          │
+│   Formula: fz = 0.05 + (DC - 6) × 0.002                             │
+│   fz_base = 0.05 + (12 - 6) × 0.002                                 │
+│   fz_base = 0.05 + 0.012 = 0.062 mm/tooth                           │
+│                                                                        │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│ PHASE 2: Coating Factor Application                                  │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                        │
+│ Coating: TiAlN                                                       │
+│ Factor: 1.6× (+60%)                                                  │
+│                                                                        │
+│ vc_coated = vc_base × coating_factor                                │
+│ vc_coated = 120 m/min × 1.6                                          │
+│ vc_coated = 192 m/min                                                │
+│                                                                        │
+│ 💡 TiAlN is excellent for steel - high temperature resistance        │
+│                                                                        │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│ PHASE 3: Operation-Specific Adjustments                              │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                                                        │
+│ Operation: FACE_FINISH                                                │
+│                                                                        │
+│ ae (Radial Engagement):                                              │
+│   ae_factor: 0.25 (25% of DC for face milling)                      │
+│   ae_base = DC × 0.25 = 12mm × 0.25 = 3.0 mm                        │
+│                                                                        │
+│ ap (Axial Depth):                                                    │
+│   ap_reference: DC (correct for FACE operations)                     │
+│   ap_factor: 0.15 (15% of DC for finishing)                         │
+│   ap_base = DC × 0.15 = 12mm × 0.15 = 1.8 mm                        │
+│                                                                        │
+│ fz Adjustment for Finishing:                                         │
+│   fz_operation_factor: 0.8 (20% reduction for better surface)       │
+│   fz_adjusted = fz_base × 0.8                                        │
+│   fz_adjusted = 0.062 mm/tooth × 0.8 = 0.0496 mm/tooth              │
+│                                                                        │
+│ vc Adjustment for Finishing:                                         │
+│   vc_operation_factor: 1.2 (20% increase for better surface)        │
+│   vc_adjusted = vc_coated × 1.2                                      │
+│   vc_adjusted = 192 m/min × 1.2 = 230.4 m/min                       │
+│                                                                        │
+│ [Continue to Phase 4 →]                                              │
+│                                                                        │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Phase 4-10 screens continue similarly...**
+
+---
+
+### 4.6.3 Reference Values Comparison
+
+**When Fusion 360 presets were detected:**
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFERENCE COMPARISON (from imported Fusion preset)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Parameter │ Calculated │ Fusion Ref │ Deviation │ Status
+──────────┼────────────┼────────────┼───────────┼─────────────────
+vc        │ 192 m/min  │ 180 m/min  │ +6.7%     │ ✓ Acceptable
+n         │ 5093 rpm   │ 4775 rpm   │ +6.7%     │ ✓ Acceptable
+fz        │ 0.050 mm   │ 0.055 mm   │ -9.1%     │ ✓ Acceptable
+vf        │ 1018 mm/mn │ 1050 mm/mn │ -3.0%     │ ✓ Acceptable
+ae        │ 3.0 mm     │ 3.0 mm     │ 0.0%      │ ✓ Match
+ap        │ 1.8 mm     │ 2.0 mm     │ -10.0%    │ ⚠️ More conservative
+
+💡 Interpretation:
+Our calculations are slightly more conservative than Fusion 360 values.
+This is intentional for hobby CNC safety.
+
+Deviations < 15% are normal and acceptable.
+Our values prioritize tool life over maximum MRR.
+```
+
+---
+
+### 4.7 State Management
 
 **Zustand Stores:**
 - `useWorkflowStore` - Current Step, Navigation, Completed Steps
@@ -3285,6 +5691,1030 @@ Sprint 8: Polish & Optimization
 
 ---
 
+### 7.4 Testing Strategy (COMPLETE)
+
+**Testing Pyramid:**
+
+```
+                    ▲
+                   ╱ ╲
+                  ╱   ╲
+                 ╱ E2E ╲              5-10 Tests
+                ╱───────╲
+               ╱         ╲
+              ╱Integration╲           20-30 Tests
+             ╱─────────────╲
+            ╱               ╲
+           ╱   Unit Tests    ╲       100-150 Tests
+          ╱───────────────────╲
+         ╱                     ╲
+        ╱_______________________╲
+```
+
+**Coverage Target:** 85% overall
+- Backend: 90%+ (calculation logic critical)
+- Frontend: 75%+ (UI logic)
+- Integration: 80%+ (API contracts)
+
+---
+
+#### 7.4.1 Unit Tests
+
+**Backend Unit Tests (pytest):**
+
+```python
+# tests/test_calculations.py
+import pytest
+from core.v2_engine import calculate_preset
+from models.domain import Tool, Material, Operation
+
+class TestCalculationEngine:
+    """Test core calculation logic."""
+
+    def test_face_rough_aluminium_basic(self):
+        """Test basic FACE_ROUGH calculation for aluminium."""
+        tool = Tool(
+            id="T1",
+            DC=12,
+            LCF=30,
+            NOF=4,
+            tool_type="END_MILL"
+        )
+
+        material = Material.ALUMINIUM
+        operation = Operation.FACE_ROUGH
+
+        result = calculate_preset(
+            tool=tool,
+            material=material,
+            operation=operation,
+            coating="NONE",
+            surface_quality="STANDARD",
+            coolant="FLOOD"
+        )
+
+        # Assertions
+        assert result.vc > 0, "vc must be positive"
+        assert result.n > 0, "n must be positive"
+        assert result.fz > 0, "fz must be positive"
+        assert result.vf > 0, "vf must be positive"
+        assert result.ae > 0, "ae must be positive"
+        assert result.ap > 0, "ap must be positive"
+
+        # Aluminium typical ranges
+        assert 200 <= result.vc <= 600, f"vc={result.vc} outside aluminium range"
+        assert 0.05 <= result.fz <= 0.20, f"fz={result.fz} outside typical range"
+
+    def test_coating_factor_application(self):
+        """Test coating factors are applied correctly."""
+        tool = Tool(id="T1", DC=12, LCF=30, NOF=4)
+
+        # Uncoated
+        result_uncoated = calculate_preset(
+            tool=tool,
+            material=Material.STEEL_MILD,
+            operation=Operation.FACE_FINISH,
+            coating="NONE"
+        )
+
+        # TiAlN coated (+60%)
+        result_coated = calculate_preset(
+            tool=tool,
+            material=Material.STEEL_MILD,
+            operation=Operation.FACE_FINISH,
+            coating="TIALN"
+        )
+
+        # vc should be ~60% higher with TiAlN
+        expected_vc_coated = result_uncoated.vc * 1.6
+        assert abs(result_coated.vc - expected_vc_coated) < 5, \
+            f"Coating factor not applied correctly: {result_coated.vc} vs {expected_vc_coated}"
+
+    def test_surface_quality_adjustments(self):
+        """Test surface quality factors."""
+        tool = Tool(id="T1", DC=12, LCF=30, NOF=4)
+
+        # Standard
+        result_standard = calculate_preset(
+            tool=tool,
+            material=Material.ALUMINIUM,
+            operation=Operation.FACE_FINISH,
+            surface_quality="STANDARD"
+        )
+
+        # Finishing (-20% ae/ap)
+        result_finishing = calculate_preset(
+            tool=tool,
+            material=Material.ALUMINIUM,
+            operation=Operation.FACE_FINISH,
+            surface_quality="FINISHING"
+        )
+
+        # ae and ap should be reduced
+        assert result_finishing.ae < result_standard.ae, \
+            "Finishing should reduce ae"
+        assert result_finishing.ap < result_standard.ap, \
+            "Finishing should reduce ap"
+
+    def test_ap_reference_logic(self):
+        """Test ap reference selection (DC vs LCF)."""
+        from core.operations import get_ap_reference
+
+        # Short tool (L/D < 1.0)
+        tool_short = Tool(id="T1", DC=30, LCF=8, NOF=3)  # L/D = 0.27
+        ref = get_ap_reference(Operation.FACE_FINISH, tool_short)
+        assert ref == "DC", "FACE operations should always use DC"
+
+        ref = get_ap_reference(Operation.SLOT_ROUGH, tool_short)
+        assert ref == "DC", "Short tools should use DC"
+
+        # Long tool (L/D >= 1.0)
+        tool_long = Tool(id="T2", DC=12, LCF=30, NOF=4)  # L/D = 2.5
+        ref = get_ap_reference(Operation.SLOT_ROUGH, tool_long)
+        assert ref == "LCF", "Long tools should use LCF for slots"
+
+    def test_validation_8_checks(self):
+        """Test all 8 validation checks."""
+        from services.validation import ValidationService
+
+        validator = ValidationService()
+
+        tool = Tool(id="T1", DC=12, LCF=30, NOF=4)
+        result = calculate_preset(
+            tool=tool,
+            material=Material.STEEL_STAINLESS,
+            operation=Operation.FACE_ROUGH
+        )
+
+        validation = validator.validate_result(result)
+
+        assert validation.checks_performed == 8, "Should perform all 8 checks"
+        assert validation.status in ["SAFE", "WARNING", "UNSAFE"]
+
+    def test_expert_mode_global_adjustment(self):
+        """Test expert mode global adjustment slider."""
+        from services.expert_mode import ExpertModeService
+
+        expert = ExpertModeService()
+
+        tool = Tool(id="T1", DC=12, LCF=30, NOF=4)
+        base_result = calculate_preset(
+            tool=tool,
+            material=Material.ALUMINIUM,
+            operation=Operation.FACE_FINISH
+        )
+
+        # Apply +15% global adjustment
+        adjusted_result = expert.apply_global_adjustment(
+            base_result,
+            adjustment=15
+        )
+
+        # All parameters should be ~15% higher
+        assert abs(adjusted_result.vc - base_result.vc * 1.15) < 1
+        assert abs(adjusted_result.vf - base_result.vf * 1.15) < 10
+        assert abs(adjusted_result.ae - base_result.ae * 1.15) < 0.1
+        assert abs(adjusted_result.ap - base_result.ap * 1.15) < 0.1
+
+    @pytest.mark.parametrize("material,operation,expected_range", [
+        (Material.SOFTWOOD, Operation.FACE_ROUGH, (800, 1200)),
+        (Material.ALUMINIUM, Operation.FACE_ROUGH, (200, 400)),
+        (Material.STEEL_MILD, Operation.FACE_ROUGH, (100, 180)),
+        (Material.STEEL_STAINLESS, Operation.FACE_FINISH, (80, 140)),
+    ])
+    def test_material_vc_ranges(self, material, operation, expected_range):
+        """Test vc values are within expected ranges for materials."""
+        tool = Tool(id="T1", DC=12, LCF=30, NOF=4)
+
+        result = calculate_preset(
+            tool=tool,
+            material=material,
+            operation=operation
+        )
+
+        min_vc, max_vc = expected_range
+        assert min_vc <= result.vc <= max_vc, \
+            f"{material.value} vc={result.vc} outside range [{min_vc}, {max_vc}]"
+
+
+# tests/test_tool_parser.py
+class TestToolParser:
+    """Test .tools file parsing."""
+
+    def test_parse_valid_tools_file(self, sample_tools_file):
+        """Test parsing valid .tools file."""
+        from services.tool_parser import ToolParserService
+
+        parser = ToolParserService()
+        result = parser.parse_tools_file(sample_tools_file)
+
+        assert result.success == True
+        assert len(result.tools) > 0
+        assert all(tool.DC > 0 for tool in result.tools)
+        assert all(tool.LCF > 0 for tool in result.tools)
+
+    def test_smart_preset_detection(self, tools_file_with_presets):
+        """Test smart preset detection from Fusion names."""
+        from services.tool_parser import ToolParserService
+
+        parser = ToolParserService()
+        result = parser.parse_tools_file(tools_file_with_presets)
+
+        tool_with_presets = next(
+            t for t in result.tools if len(t.detected_presets) > 0
+        )
+
+        # Should detect materials and operations
+        assert len(tool_with_presets.detected_materials) > 0
+        assert len(tool_with_presets.detected_operations) > 0
+
+    def test_ld_ratio_calculation(self):
+        """Test L/D ratio calculation."""
+        from services.tool_parser import ToolParserService
+
+        parser = ToolParserService()
+
+        tool_data = {
+            "DC": 12.0,
+            "LCF": 30.0,
+            "NOF": 4
+        }
+
+        ld_ratio = parser.calculate_ld_ratio(tool_data)
+        assert abs(ld_ratio - 2.5) < 0.01
+
+
+# tests/test_export.py
+class TestExport:
+    """Test export functionality."""
+
+    def test_fusion_export_structure(self, calculation_results):
+        """Test Fusion .tools export structure."""
+        from services.export import ExportService
+
+        exporter = ExportService()
+        tools_file = exporter.create_fusion_export(calculation_results)
+
+        # Should be valid ZIP
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(tools_file)) as zf:
+            assert 'tools.json' in zf.namelist()
+
+            # Parse tools.json
+            tools_json = json.loads(zf.read('tools.json'))
+            assert 'data' in tools_json
+            assert 'tools' in tools_json['data']
+
+    def test_fusion_preset_expressions(self, single_preset_result):
+        """Test preset has all 13 expressions."""
+        from services.export import ExportService
+
+        exporter = ExportService()
+        preset_json = exporter.create_preset_json(single_preset_result)
+
+        assert 'expressions' in preset_json
+        expressions = preset_json['expressions']
+
+        # Must have exactly 13 expressions
+        assert len(expressions) == 13
+
+        # Check required expression names
+        required = [
+            'tool_spindleSpeed', 'tool_feedCutting', 'tool_feedPlunge',
+            'tool_rampSpindleSpeed', 'tool_rampFeedCutting',
+            'tool_surfaceSpeed', 'tool_stepover', 'tool_stepdown',
+            # ... etc
+        ]
+        for exp in required:
+            assert exp in [e['name'] for e in expressions]
+```
+
+---
+
+#### 7.4.2 Integration Tests
+
+**API Integration Tests (pytest + httpx):**
+
+```python
+# tests/test_api_integration.py
+import pytest
+from httpx import AsyncClient
+from fastapi import status
+
+@pytest.mark.asyncio
+class TestCalculationAPI:
+    """Test calculation API endpoints."""
+
+    async def test_calculate_single_preset(self, client: AsyncClient):
+        """Test /api/v1/calculate with single preset."""
+        request_data = {
+            "tool_ids": ["T1"],
+            "materials": ["Aluminium"],
+            "operations": ["FACE_FINISH"],
+            "coating": "TIN",
+            "surface_quality": "STANDARD",
+            "coolant": "FLOOD"
+        }
+
+        response = await client.post("/api/v1/calculate", json=request_data)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        assert data["success"] == True
+        assert data["total_presets"] == 1
+        assert len(data["results"]) == 1
+
+        result = data["results"][0]
+        assert "vc" in result
+        assert "n" in result
+        assert "fz" in result
+        assert "vf" in result
+        assert "ae" in result
+        assert "ap" in result
+
+    async def test_calculate_batch(self, client: AsyncClient):
+        """Test batch calculation with multiple presets."""
+        request_data = {
+            "tool_ids": ["T1", "T2"],
+            "materials": ["Aluminium", "Steel_Mild"],
+            "operations": ["FACE_ROUGH", "FACE_FINISH"],
+            "coating": "TIALN",
+            "surface_quality": "STANDARD",
+            "coolant": "FLOOD"
+        }
+
+        # 2 tools × 2 materials × 2 operations = 8 presets
+        response = await client.post("/api/v1/calculate", json=request_data)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        assert data["total_presets"] == 8
+        assert len(data["results"]) == 8
+
+    async def test_async_calculation(self, client: AsyncClient):
+        """Test async calculation endpoint."""
+        request_data = {
+            "tool_ids": ["T1", "T2", "T3"],
+            "materials": ["Aluminium", "Steel_Mild", "Brass"],
+            "operations": ["FACE_ROUGH", "FACE_FINISH", "SLOT_ROUGH", "SLOT_FINISH"],
+            "coating": "TIALN",
+            "surface_quality": "STANDARD",
+            "coolant": "FLOOD"
+        }
+
+        # 3 × 3 × 4 = 36 presets (should trigger async)
+        response = await client.post("/api/v1/calculate/async", json=request_data)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        assert "task_id" in data
+        assert data["status"] == "PENDING"
+
+        # Poll status
+        task_id = data["task_id"]
+        for _ in range(10):  # Max 10 attempts
+            await asyncio.sleep(1)
+            status_response = await client.get(f"/api/v1/calculate/status/{task_id}")
+            status_data = status_response.json()
+
+            if status_data["state"] == "SUCCESS":
+                assert status_data["progress"] == 100
+                assert "result" in status_data
+                break
+
+    async def test_expert_mode_calculation(self, client: AsyncClient):
+        """Test expert mode endpoint."""
+        request_data = {
+            "tool_id": "T1",
+            "material": "Steel_Mild",
+            "operation": "FACE_FINISH",
+            "coating": "TIALN",
+            "overrides": {
+                "global_adjustment": 15,
+                "ap_reference": "AUTO",
+                "individual_overrides": {
+                    "ae": 1.10,
+                    "ap": 1.00
+                }
+            }
+        }
+
+        response = await client.post("/api/v1/expert/calculate", json=request_data)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        assert data["success"] == True
+        assert "result" in data
+        assert "validation" in data
+
+    async def test_tools_file_upload(self, client: AsyncClient, sample_tools_file):
+        """Test .tools file upload and parsing."""
+        files = {"file": ("test.tools", sample_tools_file, "application/zip")}
+
+        response = await client.post("/api/v1/tools/parse", files=files)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        assert data["success"] == True
+        assert len(data["tools"]) > 0
+
+        tool = data["tools"][0]
+        assert "id" in tool
+        assert "DC" in tool
+        assert "LCF" in tool
+        assert "NOF" in tool
+
+    async def test_export_fusion(self, client: AsyncClient, calculation_results):
+        """Test Fusion .tools export."""
+        export_request = {
+            "results": calculation_results,
+            "batch_id": "test_batch_123"
+        }
+
+        response = await client.post("/api/v1/export/fusion", json=export_request)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/zip"
+
+        # Verify it's a valid ZIP
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            assert 'tools.json' in zf.namelist()
+
+    async def test_validation_errors(self, client: AsyncClient):
+        """Test API validation errors."""
+        # Missing required field
+        invalid_request = {
+            "tool_ids": ["T1"],
+            # Missing materials
+            "operations": ["FACE_FINISH"]
+        }
+
+        response = await client.post("/api/v1/calculate", json=invalid_request)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        data = response.json()
+        assert "detail" in data
+
+    async def test_rate_limiting(self, client: AsyncClient):
+        """Test API rate limiting."""
+        # Make multiple rapid requests
+        for _ in range(100):
+            response = await client.get("/health")
+            if response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+                break
+        # Should hit rate limit eventually
+```
+
+---
+
+#### 7.4.3 E2E Tests (Playwright)
+
+**End-to-End Tests:**
+
+```typescript
+// tests/e2e/workflow.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Complete 6-Screen Workflow', () => {
+  test('should complete full workflow from import to export', async ({ page }) => {
+    // Screen 1: Import .tools file
+    await page.goto('/');
+    await page.click('text=Import Tools');
+
+    // Upload file
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles('tests/fixtures/sample.tools');
+
+    // Wait for parsing
+    await expect(page.locator('text=✓ 13 tools imported')).toBeVisible();
+    await page.click('text=Continue to Tool Selection');
+
+    // Screen 2: Tool Selection
+    await expect(page).toHaveURL(/\/tools/);
+
+    // Select tools
+    await page.click('text=Select All');
+    await expect(page.locator('text=13 of 13 tools selected')).toBeVisible();
+    await page.click('text=Continue with 13 tools');
+
+    // Screen 3: Material Selection
+    await expect(page).toHaveURL(/\/materials/);
+
+    // Select materials for first tool
+    await page.click('label:has-text("Aluminium")');
+    await page.click('label:has-text("Steel Mild")');
+
+    // Apply to all tools
+    await page.click('text=Apply to all tools');
+    await page.click('text=Continue: 26 materials total');
+
+    // Screen 4: Operation Matrix
+    await expect(page).toHaveURL(/\/operations/);
+
+    // Click FACE group header (select all FACE operations)
+    await page.click('[data-group="FACE"]');
+
+    // Verify summary
+    await expect(page.locator('text=26 presets')).toBeVisible();
+    await page.click('text=Calculate 26 Presets');
+
+    // Screen 5: Calculation Progress
+    await expect(page).toHaveURL(/\/calculating/);
+    await expect(page.locator('text=Calculating...')).toBeVisible();
+
+    // Wait for completion (max 30s)
+    await expect(page.locator('text=Calculation completed')).toBeVisible({
+      timeout: 30000
+    });
+
+    // Auto-redirect to results
+    await expect(page).toHaveURL(/\/results/);
+
+    // Screen 6: Results
+    // Verify table
+    await expect(page.locator('table')).toBeVisible();
+    await expect(page.locator('tbody tr')).toHaveCount(26);
+
+    // Verify columns
+    await expect(page.locator('th:has-text("vc")')).toBeVisible();
+    await expect(page.locator('th:has-text("n")')).toBeVisible();
+    await expect(page.locator('th:has-text("fz")')).toBeVisible();
+
+    // Filter results
+    await page.click('button:has-text("SAFE")');
+    const safeRows = page.locator('tbody tr:has([data-status="SAFE"])');
+    expect(await safeRows.count()).toBeGreaterThan(0);
+
+    // Screen 7: Export
+    await page.click('text=Export to Fusion 360');
+
+    // Wait for download
+    const downloadPromise = page.waitForEvent('download');
+    await page.click('text=Download .tools file');
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toContain('.tools');
+  });
+
+  test('should handle expert mode adjustments', async ({ page }) => {
+    // Navigate to operations screen
+    await page.goto('/operations');
+
+    // Enable expert mode
+    await page.click('text=Show Expert Mode');
+
+    // Adjust global slider
+    const slider = page.locator('[data-testid="global-adjustment-slider"]');
+    await slider.fill('15');
+
+    // Verify effect display
+    await expect(page.locator('text=vc: ×1.15')).toBeVisible();
+
+    // Apply overrides
+    await page.click('text=Apply Overrides');
+
+    // Continue to calculation
+    await page.click('text=Calculate');
+
+    // Verify expert mode indicator in results
+    await expect(page).toHaveURL(/\/results/);
+    await expect(page.locator('text=⚙️ Expert Mode Active: +15%')).toBeVisible();
+  });
+
+  test('should show mathematical workbook', async ({ page }) => {
+    // Navigate to results
+    await page.goto('/results/test-batch-123');
+
+    // Click workbook button
+    await page.click('button:has-text("📊 Workbook")');
+
+    // Verify modal
+    await expect(page.locator('text=Mathematical Workbook')).toBeVisible();
+    await expect(page.locator('text=PHASE 1: Material Base Values')).toBeVisible();
+    await expect(page.locator('text=PHASE 2: Coating Factor')).toBeVisible();
+
+    // Navigate phases
+    await page.click('text=Continue to Phase 4');
+    await expect(page.locator('text=PHASE 4:')).toBeVisible();
+  });
+});
+
+
+test.describe('Error Handling', () => {
+  test('should handle invalid .tools file', async ({ page }) => {
+    await page.goto('/');
+
+    // Upload invalid file
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles('tests/fixtures/invalid.txt');
+
+    // Verify error message
+    await expect(page.locator('text=Invalid file format')).toBeVisible();
+    await expect(page.locator('text=Expected .tools file')).toBeVisible();
+  });
+
+  test('should handle calculation errors', async ({ page }) => {
+    // ... trigger calculation error scenario ...
+
+    await expect(page.locator('text=Calculation failed')).toBeVisible();
+    await expect(page.locator('button:has-text("Retry")')).toBeVisible();
+  });
+});
+```
+
+---
+
+#### 7.4.4 Performance Tests
+
+**Load Testing (locust):**
+
+```python
+# tests/performance/locustfile.py
+from locust import HttpUser, task, between
+
+class CNCCalculatorUser(HttpUser):
+    wait_time = between(1, 3)
+
+    @task(3)
+    def calculate_single_preset(self):
+        """Most common operation - single preset calculation."""
+        self.client.post("/api/v1/calculate", json={
+            "tool_ids": ["T1"],
+            "materials": ["Aluminium"],
+            "operations": ["FACE_FINISH"],
+            "coating": "TIN",
+            "surface_quality": "STANDARD",
+            "coolant": "FLOOD"
+        })
+
+    @task(2)
+    def calculate_batch(self):
+        """Batch calculation - 10 presets."""
+        self.client.post("/api/v1/calculate", json={
+            "tool_ids": ["T1", "T2"],
+            "materials": ["Aluminium", "Steel_Mild"],
+            "operations": ["FACE_ROUGH", "FACE_FINISH", "SLOT_FINISH"],
+            "coating": "TIALN"
+        })
+
+    @task(1)
+    def parse_tools_file(self):
+        """File upload and parsing."""
+        with open("tests/fixtures/sample.tools", "rb") as f:
+            self.client.post("/api/v1/tools/parse", files={"file": f})
+
+    def on_start(self):
+        """Called when user starts."""
+        # Health check
+        self.client.get("/health")
+```
+
+**Run:** `locust -f tests/performance/locustfile.py --host=http://localhost:8000`
+
+**Performance Targets:**
+- Single preset calculation: < 100ms
+- Batch (10 presets): < 500ms
+- Batch (100 presets): < 2s
+- Tool parsing: < 200ms
+- API p95 latency: < 300ms
+
+---
+
+### 7.5 Deployment Strategy
+
+#### 7.5.1 Docker Configuration
+
+**Dockerfile (Backend):**
+
+```dockerfile
+# Dockerfile.backend
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Dockerfile (Frontend):**
+
+```dockerfile
+# Dockerfile.frontend
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source
+COPY . .
+
+# Build
+RUN npm run build
+
+# Production stage
+FROM nginx:alpine
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**docker-compose.yml:**
+
+```yaml
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/cnc_calculator
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+      - uploads:/app/uploads
+    networks:
+      - cnc-network
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A workers.celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/cnc_calculator
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+    networks:
+      - cnc-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - cnc-network
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=cnc_calculator
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - cnc-network
+
+  # Redis (Celery broker)
+  redis:
+    image: redis:7-alpine
+    networks:
+      - cnc-network
+
+volumes:
+  postgres-data:
+  uploads:
+
+networks:
+  cnc-network:
+    driver: bridge
+```
+
+---
+
+#### 7.5.2 CI/CD Pipeline (GitHub Actions)
+
+**.github/workflows/ci.yml:**
+
+```yaml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Backend tests
+  backend-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run tests
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          REDIS_HOST: localhost
+        run: |
+          pytest --cov=. --cov-report=xml --cov-report=term
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage.xml
+
+  # Frontend tests
+  frontend-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run linter
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Run tests
+        working-directory: ./frontend
+        run: npm test -- --coverage
+
+      - name: Build
+        working-directory: ./frontend
+        run: npm run build
+
+  # E2E tests
+  e2e-test:
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+
+      - name: Start services
+        run: docker-compose up -d
+
+      - name: Wait for services
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8000/health; do sleep 2; done'
+          timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+
+      - name: Run E2E tests
+        run: npx playwright test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: playwright-report
+          path: playwright-report/
+
+  # Build and push Docker images
+  build-deploy:
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test, e2e-test]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/cnc-calculator-backend:latest
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/cnc-calculator-frontend:latest
+
+  # Deploy to production
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-deploy
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd /opt/cnc-calculator
+            docker-compose pull
+            docker-compose up -d
+            docker-compose exec -T backend python manage.py migrate
+```
+
+---
+
 ## TEIL 8: ANHÄNGE
 
 ### Glossar
@@ -3340,6 +6770,761 @@ Sprint 8: Polish & Optimization
 ## Acceptance Criteria
 - [ ] Criterion 1
 - [ ] Criterion 2
+```
+
+---
+
+### 8.1 Pydantic Schema Examples
+
+**Complete schema definitions for type safety:**
+
+```python
+# models/schemas.py
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Dict, Any
+from enum import Enum
+from datetime import datetime
+
+
+class ToolType(str, Enum):
+    END_MILL = "end_mill"
+    BALL_NOSE = "ball_nose"
+    FACE_MILL = "face_mill"
+    CHAMFER = "chamfer"
+    DRILL = "drill"
+
+
+class MaterialType(str, Enum):
+    SOFTWOOD = "Softwood"
+    HARDWOOD = "Hardwood"
+    ALUMINIUM = "Aluminium"
+    BRASS = "Brass"
+    ACRYLIC = "Acrylic"
+    STEEL_MILD = "Steel_Mild"
+    STEEL_STAINLESS = "Steel_Stainless"
+
+
+class OperationType(str, Enum):
+    FACE_ROUGH = "FACE_ROUGH"
+    FACE_FINISH = "FACE_FINISH"
+    SLOT_ROUGH = "SLOT_ROUGH"
+    SLOT_FINISH = "SLOT_FINISH"
+    SLOT_FULL = "SLOT_FULL"
+    SLOT_TROCHOIDAL = "SLOT_TROCHOIDAL"
+    GEOMETRY_CHAMFER = "GEOMETRY_CHAMFER"
+    GEOMETRY_RADIUS = "GEOMETRY_RADIUS"
+    GEOMETRY_BALL = "GEOMETRY_BALL"
+    SPECIAL_ADAPTIVE = "SPECIAL_ADAPTIVE"
+    SPECIAL_PLUNGE = "SPECIAL_PLUNGE"
+    SPECIAL_DRILL = "SPECIAL_DRILL"
+
+
+class CoatingType(str, Enum):
+    NONE = "NONE"
+    TIN = "TIN"
+    TIALN = "TIALN"
+    ALTIN = "ALTIN"
+    DIAMOND = "DIAMOND"
+    CARBIDE = "CARBIDE"
+
+
+class SurfaceQuality(str, Enum):
+    ROUGHING = "ROUGHING"
+    STANDARD = "STANDARD"
+    FINISHING = "FINISHING"
+    HIGH_FINISH = "HIGH_FINISH"
+
+
+class CoolantType(str, Enum):
+    FLOOD = "FLOOD"
+    DRY = "DRY"
+    MQL = "MQL"
+
+
+class Geometry(BaseModel):
+    DC: float = Field(..., gt=0, description="Cutting diameter in mm")
+    LCF: float = Field(..., gt=0, description="Length of cut in mm")
+    NOF: int = Field(..., ge=1, le=12, description="Number of flutes")
+    SHAFT_DIAMETER: Optional[float] = Field(None, gt=0)
+    OVERALL_LENGTH: Optional[float] = Field(None, gt=0)
+
+    @property
+    def ld_ratio(self) -> float:
+        """Calculate L/D ratio."""
+        return self.LCF / self.DC
+
+
+class Tool(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    tool_type: ToolType
+    geometry: Geometry
+    vendor: Optional[str] = None
+    part_number: Optional[str] = None
+
+
+class PresetDetection(BaseModel):
+    has_presets: bool
+    detected_materials: List[MaterialType] = []
+    detected_operations: List[OperationType] = []
+    reference_values: Dict[str, Any] = {}
+
+
+class ToolParseResponse(BaseModel):
+    success: bool
+    tools: List[Tool]
+    total_tools: int
+    detections: Dict[str, PresetDetection] = {}
+    errors: List[str] = []
+
+
+class CalculationRequest(BaseModel):
+    tool_ids: List[str] = Field(..., min_items=1)
+    materials: List[MaterialType] = Field(..., min_items=1)
+    operations: List[OperationType] = Field(..., min_items=1)
+    coating: CoatingType = CoatingType.NONE
+    surface_quality: SurfaceQuality = SurfaceQuality.STANDARD
+    coolant: CoolantType = CoolantType.FLOOD
+
+    @validator('tool_ids')
+    def validate_tool_ids(cls, v):
+        if len(v) > 50:
+            raise ValueError('Maximum 50 tools per batch')
+        return v
+
+    @property
+    def total_presets(self) -> int:
+        return len(self.tool_ids) * len(self.materials) * len(self.operations)
+
+
+class ValidationStatus(str, Enum):
+    SAFE = "SAFE"
+    WARNING = "WARNING"
+    UNSAFE = "UNSAFE"
+
+
+class ValidationCheck(BaseModel):
+    check_id: str
+    name: str
+    status: ValidationStatus
+    message: str
+    value: Optional[float] = None
+    threshold: Optional[float] = None
+
+
+class PresetResult(BaseModel):
+    preset_id: str
+    preset_name: str
+    tool_id: str
+    material: MaterialType
+    operation: OperationType
+
+    # Calculated parameters
+    vc: float = Field(..., description="Cutting speed in m/min")
+    n: float = Field(..., description="Spindle speed in RPM")
+    fz: float = Field(..., description="Chip load in mm/tooth")
+    vf: float = Field(..., description="Feed rate in mm/min")
+    ae: float = Field(..., description="Radial engagement in mm")
+    ap: float = Field(..., description="Axial depth in mm")
+    mrr: float = Field(..., description="Material removal rate in cm³/min")
+
+    # Percentages
+    ae_percent: float = Field(..., description="ae as % of reference")
+    ap_percent: float = Field(..., description="ap as % of reference")
+
+    # Validation
+    validation_status: ValidationStatus
+    validation_checks: List[ValidationCheck] = []
+
+    # Metadata
+    ap_reference: str = Field(..., description="DC or LCF")
+    coating_factor: float = 1.0
+    surface_quality_factor: Dict[str, float] = {}
+    expert_mode_applied: bool = False
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CalculationResponse(BaseModel):
+    success: bool
+    total_presets: int
+    results: List[PresetResult]
+    warnings: List[str] = []
+    calculation_time_ms: Optional[float] = None
+
+
+class ExpertModeOverrides(BaseModel):
+    global_adjustment: Optional[int] = Field(None, ge=-50, le=50)
+    ap_reference: Optional[str] = Field(None, pattern="^(AUTO|DC|LCF)$")
+    individual_overrides: Optional[Dict[str, float]] = None
+
+    @validator('individual_overrides')
+    def validate_individual_overrides(cls, v):
+        if v is not None:
+            allowed_keys = {'ae', 'ap', 'fz', 'vc'}
+            for key in v.keys():
+                if key not in allowed_keys:
+                    raise ValueError(f'Invalid override key: {key}')
+                if not (0.5 <= v[key] <= 2.0):
+                    raise ValueError(f'Override value for {key} must be between 0.5 and 2.0')
+        return v
+
+
+class ExpertModeRequest(BaseModel):
+    tool_id: str
+    material: MaterialType
+    operation: OperationType
+    coating: CoatingType = CoatingType.NONE
+    overrides: ExpertModeOverrides
+
+
+class ExpertModeValidation(BaseModel):
+    valid: bool
+    warnings: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+
+    @property
+    def has_errors(self) -> bool:
+        return len(self.errors) > 0
+
+
+class ExpertModeResponse(BaseModel):
+    success: bool
+    result: PresetResult
+    validation: ExpertModeValidation
+
+
+class AsyncTaskResponse(BaseModel):
+    task_id: str
+    status: str
+    message: str
+
+
+class TaskStatus(BaseModel):
+    task_id: str
+    state: str
+    status: str
+    progress: int = 0
+    current_preset: Optional[str] = None
+    total_presets: Optional[int] = None
+    result: Optional[Any] = None
+    error: Optional[str] = None
+
+
+class ExportFormat(str, Enum):
+    FUSION = "fusion"
+    CSV = "csv"
+    EXCEL = "excel"
+    JSON = "json"
+
+
+class ExportRequest(BaseModel):
+    results: List[PresetResult]
+    format: ExportFormat = ExportFormat.FUSION
+    batch_id: str
+    include_metadata: bool = True
+```
+
+---
+
+### 8.2 Database Schema (PostgreSQL)
+
+**Complete database schema for data persistence:**
+
+```sql
+-- migrations/001_initial_schema.sql
+
+-- Tools table
+CREATE TABLE tools (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    tool_type VARCHAR(50) NOT NULL,
+    vendor VARCHAR(100),
+    part_number VARCHAR(100),
+
+    -- Geometry
+    dc DECIMAL(10, 2) NOT NULL CHECK (dc > 0),
+    lcf DECIMAL(10, 2) NOT NULL CHECK (lcf > 0),
+    nof INTEGER NOT NULL CHECK (nof >= 1 AND nof <= 12),
+    shaft_diameter DECIMAL(10, 2),
+    overall_length DECIMAL(10, 2),
+
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT valid_ld_ratio CHECK (lcf / dc < 10)
+);
+
+CREATE INDEX idx_tools_type ON tools(tool_type);
+CREATE INDEX idx_tools_created_at ON tools(created_at);
+
+
+-- Calculation jobs table
+CREATE TABLE calculation_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id VARCHAR(100) UNIQUE NOT NULL,
+
+    -- Request parameters
+    tool_ids TEXT[] NOT NULL,
+    materials TEXT[] NOT NULL,
+    operations TEXT[] NOT NULL,
+    coating VARCHAR(50) NOT NULL DEFAULT 'NONE',
+    surface_quality VARCHAR(50) NOT NULL DEFAULT 'STANDARD',
+    coolant VARCHAR(50) NOT NULL DEFAULT 'FLOOD',
+
+    -- Status
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+    total_presets INTEGER NOT NULL,
+    completed_presets INTEGER DEFAULT 0,
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+
+    -- Metadata
+    error_message TEXT,
+    calculation_time_ms INTEGER,
+
+    CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED'))
+);
+
+CREATE INDEX idx_jobs_batch_id ON calculation_jobs(batch_id);
+CREATE INDEX idx_jobs_status ON calculation_jobs(status);
+CREATE INDEX idx_jobs_created_at ON calculation_jobs(created_at);
+
+
+-- Preset results table
+CREATE TABLE preset_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL REFERENCES calculation_jobs(id) ON DELETE CASCADE,
+
+    preset_id VARCHAR(200) UNIQUE NOT NULL,
+    preset_name VARCHAR(200) NOT NULL,
+
+    -- References
+    tool_id VARCHAR(50) NOT NULL REFERENCES tools(id),
+    material VARCHAR(50) NOT NULL,
+    operation VARCHAR(50) NOT NULL,
+
+    -- Calculated parameters
+    vc DECIMAL(10, 2) NOT NULL CHECK (vc > 0),
+    n DECIMAL(10, 2) NOT NULL CHECK (n > 0),
+    fz DECIMAL(10, 4) NOT NULL CHECK (fz > 0),
+    vf DECIMAL(10, 2) NOT NULL CHECK (vf > 0),
+    ae DECIMAL(10, 2) NOT NULL CHECK (ae > 0),
+    ap DECIMAL(10, 2) NOT NULL CHECK (ap > 0),
+    mrr DECIMAL(10, 2) NOT NULL,
+
+    -- Percentages
+    ae_percent DECIMAL(5, 1) NOT NULL,
+    ap_percent DECIMAL(5, 1) NOT NULL,
+
+    -- Validation
+    validation_status VARCHAR(50) NOT NULL,
+    validation_checks JSONB,
+
+    -- Metadata
+    ap_reference VARCHAR(10) NOT NULL CHECK (ap_reference IN ('DC', 'LCF')),
+    coating_factor DECIMAL(5, 2) NOT NULL DEFAULT 1.0,
+    surface_quality_factor JSONB,
+    expert_mode_applied BOOLEAN DEFAULT FALSE,
+    expert_mode_overrides JSONB,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CHECK (validation_status IN ('SAFE', 'WARNING', 'UNSAFE'))
+);
+
+CREATE INDEX idx_results_job_id ON preset_results(job_id);
+CREATE INDEX idx_results_preset_id ON preset_results(preset_id);
+CREATE INDEX idx_results_tool_id ON preset_results(tool_id);
+CREATE INDEX idx_results_validation_status ON preset_results(validation_status);
+CREATE INDEX idx_results_created_at ON preset_results(created_at);
+
+
+-- Audit log table
+CREATE TABLE audit_log (
+    id BIGSERIAL PRIMARY KEY,
+
+    -- Event info
+    event_type VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id VARCHAR(200),
+
+    -- User/System info
+    user_id VARCHAR(100),
+    ip_address VARCHAR(50),
+    user_agent TEXT,
+
+    -- Changes
+    old_value JSONB,
+    new_value JSONB,
+
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    additional_data JSONB
+);
+
+CREATE INDEX idx_audit_event_type ON audit_log(event_type);
+CREATE INDEX idx_audit_entity ON audit_log(entity_type, entity_id);
+CREATE INDEX idx_audit_created_at ON audit_log(created_at);
+
+
+-- User preferences table (future feature)
+CREATE TABLE user_preferences (
+    user_id VARCHAR(100) PRIMARY KEY,
+
+    -- UI preferences
+    theme VARCHAR(50) DEFAULT 'dark',
+    contrast_mode VARCHAR(50) DEFAULT 'balanced',
+
+    -- Default settings
+    default_coating VARCHAR(50) DEFAULT 'NONE',
+    default_surface_quality VARCHAR(50) DEFAULT 'STANDARD',
+    default_coolant VARCHAR(50) DEFAULT 'FLOOD',
+
+    -- Expert mode defaults
+    expert_mode_enabled BOOLEAN DEFAULT FALSE,
+    expert_global_adjustment INTEGER DEFAULT 0,
+
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    preferences JSONB
+);
+
+
+-- Views for reporting
+
+CREATE VIEW calculation_stats AS
+SELECT
+    DATE(created_at) as date,
+    COUNT(*) as total_jobs,
+    SUM(total_presets) as total_presets_calculated,
+    AVG(calculation_time_ms) as avg_calculation_time_ms,
+    COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as successful_jobs,
+    COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed_jobs
+FROM calculation_jobs
+GROUP BY DATE(created_at)
+ORDER BY date DESC;
+
+
+CREATE VIEW tool_usage_stats AS
+SELECT
+    t.id as tool_id,
+    t.name as tool_name,
+    t.tool_type,
+    COUNT(DISTINCT pr.job_id) as times_used,
+    COUNT(pr.id) as total_presets,
+    AVG(pr.vc) as avg_vc,
+    AVG(pr.n) as avg_n,
+    MAX(pr.created_at) as last_used
+FROM tools t
+LEFT JOIN preset_results pr ON t.id = pr.tool_id
+GROUP BY t.id, t.name, t.tool_type
+ORDER BY times_used DESC;
+
+
+CREATE VIEW validation_summary AS
+SELECT
+    validation_status,
+    COUNT(*) as count,
+    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
+FROM preset_results
+GROUP BY validation_status
+ORDER BY count DESC;
+```
+
+---
+
+### 8.3 Monitoring and Observability
+
+**Prometheus metrics configuration:**
+
+```python
+# monitoring/metrics.py
+from prometheus_client import Counter, Histogram, Gauge, generate_latest
+from functools import wraps
+import time
+
+# Metrics definitions
+calculation_requests_total = Counter(
+    'cnc_calculator_calculation_requests_total',
+    'Total number of calculation requests',
+    ['status', 'async']
+)
+
+calculation_duration_seconds = Histogram(
+    'cnc_calculator_calculation_duration_seconds',
+    'Time spent calculating presets',
+    ['preset_count_bucket'],
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
+)
+
+active_calculations = Gauge(
+    'cnc_calculator_active_calculations',
+    'Number of currently active calculations'
+)
+
+preset_calculations_total = Counter(
+    'cnc_calculator_preset_calculations_total',
+    'Total number of presets calculated',
+    ['material', 'operation', 'validation_status']
+)
+
+api_request_duration_seconds = Histogram(
+    'cnc_calculator_api_request_duration_seconds',
+    'API request duration',
+    ['method', 'endpoint', 'status']
+)
+
+file_upload_size_bytes = Histogram(
+    'cnc_calculator_file_upload_size_bytes',
+    'Size of uploaded .tools files',
+    buckets=[1024, 10240, 102400, 1024000, 10240000]  # 1KB to 10MB
+)
+
+celery_task_duration_seconds = Histogram(
+    'cnc_calculator_celery_task_duration_seconds',
+    'Celery task execution time',
+    ['task_name', 'status']
+)
+
+database_query_duration_seconds = Histogram(
+    'cnc_calculator_database_query_duration_seconds',
+    'Database query execution time',
+    ['operation']
+)
+
+
+def track_calculation_time(preset_count: int):
+    """Decorator to track calculation timing."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Determine bucket
+            if preset_count <= 5:
+                bucket = "1-5"
+            elif preset_count <= 20:
+                bucket = "6-20"
+            elif preset_count <= 100:
+                bucket = "21-100"
+            else:
+                bucket = "100+"
+
+            start_time = time.time()
+            active_calculations.inc()
+
+            try:
+                result = await func(*args, **kwargs)
+                duration = time.time() - start_time
+                calculation_duration_seconds.labels(preset_count_bucket=bucket).observe(duration)
+                calculation_requests_total.labels(status="success", async=False).inc()
+                return result
+            except Exception as e:
+                calculation_requests_total.labels(status="error", async=False).inc()
+                raise
+            finally:
+                active_calculations.dec()
+
+        return wrapper
+    return decorator
+
+
+# FastAPI endpoint
+from fastapi import Response
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(
+        content=generate_latest(),
+        media_type="text/plain"
+    )
+```
+
+**Grafana Dashboard JSON:**
+
+```json
+{
+  "dashboard": {
+    "title": "CNC Calculator Monitoring",
+    "panels": [
+      {
+        "title": "Calculation Requests (Rate)",
+        "targets": [
+          {
+            "expr": "rate(cnc_calculator_calculation_requests_total[5m])"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Average Calculation Duration",
+        "targets": [
+          {
+            "expr": "rate(cnc_calculator_calculation_duration_seconds_sum[5m]) / rate(cnc_calculator_calculation_duration_seconds_count[5m])"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Active Calculations",
+        "targets": [
+          {
+            "expr": "cnc_calculator_active_calculations"
+          }
+        ],
+        "type": "gauge"
+      },
+      {
+        "title": "Presets by Validation Status",
+        "targets": [
+          {
+            "expr": "sum by (validation_status) (cnc_calculator_preset_calculations_total)"
+          }
+        ],
+        "type": "piechart"
+      },
+      {
+        "title": "API Request p95 Latency",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(cnc_calculator_api_request_duration_seconds_bucket[5m]))"
+          }
+        ],
+        "type": "graph"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 8.4 Security Considerations
+
+**Security best practices:**
+
+```python
+# security/middleware.py
+from fastapi import Request, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+import hashlib
+import hmac
+import time
+
+# Add security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
+
+# Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.post("/api/v1/calculate")
+@limiter.limit("10/minute")
+async def calculate_with_rate_limit(request: Request, calc_request: CalculationRequest):
+    # ... implementation ...
+    pass
+
+
+# Input validation and sanitization
+from bleach import clean
+
+def sanitize_string(value: str) -> str:
+    """Remove potentially dangerous characters."""
+    return clean(value, tags=[], strip=True)
+
+
+# File upload security
+ALLOWED_MIME_TYPES = {
+    'application/zip',
+    'application/x-zip-compressed'
+}
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+async def validate_file_upload(file: UploadFile) -> bytes:
+    """Validate uploaded file."""
+    # Check file size
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE / 1024 / 1024} MB"
+        )
+
+    # Check MIME type
+    import magic
+    mime_type = magic.from_buffer(contents, mime=True)
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type: {mime_type}"
+        )
+
+    # Check if it's actually a ZIP
+    import zipfile
+    try:
+        with zipfile.ZipFile(io.BytesIO(contents)) as zf:
+            # Check for zip bombs
+            total_size = sum(info.file_size for info in zf.infolist())
+            if total_size > MAX_FILE_SIZE * 10:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Suspicious file: compressed size exceeds limits"
+                )
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid ZIP file"
+        )
+
+    return contents
+
+
+# API authentication (future feature)
+security = HTTPBearer()
+
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify JWT token."""
+    token = credentials.credentials
+    try:
+        # Verify JWT
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=401,
+            detail="Token has expired"
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
 ```
 
 ---

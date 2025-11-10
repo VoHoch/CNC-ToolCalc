@@ -1,0 +1,238 @@
+/**
+ * CompactSlider Component Styles
+ *
+ * Bidirectional slider with center at 0
+ * Negative: Blue | Center: White | Positive: Orange
+ *
+ * Version: v0.1.0
+ */
+
+.compact-slider {
+  position: relative;
+  width: 100%;
+}
+
+/* ============================================
+   HEADER (Label + Value)
+   ============================================ */
+
+.compact-slider__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+  gap: var(--space-2);
+}
+
+.compact-slider__label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.compact-slider__value {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-mono);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  min-width: 3.5rem;
+  text-align: center;
+}
+
+.compact-slider__value--negative {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.compact-slider__value--positive {
+  color: #f97316;
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+.compact-slider__value--center {
+  color: var(--text-primary);
+}
+
+/* ============================================
+   CONTAINER
+   ============================================ */
+
+.compact-slider__container {
+  position: relative;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+}
+
+/* ============================================
+   TRACK
+   ============================================ */
+
+.compact-slider__track {
+  position: relative;
+  width: 100%;
+  height: var(--slider-track-height-compact);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+/* Center marker (vertical line at 0%) */
+.compact-slider__center-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text-muted);
+  transform: translateX(-50%);
+  z-index: calc(var(--z-base) + 1);
+}
+
+/* Fill bar (shows negative or positive range) */
+.compact-slider__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transition: all var(--transition-base);
+  z-index: var(--z-base);
+}
+
+/* ============================================
+   INPUT (Range Element)
+   ============================================ */
+
+.compact-slider__input {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  width: 100%;
+  height: var(--slider-track-height-compact);
+  background: transparent;
+  cursor: pointer;
+  z-index: calc(var(--z-base) + 2);
+}
+
+.compact-slider--disabled .compact-slider__input {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Invisible thumb for Webkit browsers */
+.compact-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 2px solid var(--bg-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.compact-slider__input:hover::-webkit-slider-thumb {
+  background: var(--accent-primary);
+  transform: scale(1.2);
+}
+
+.compact-slider__input:active::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+
+/* Invisible thumb for Firefox */
+.compact-slider__input::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  border: 2px solid var(--bg-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.compact-slider__input:hover::-moz-range-thumb {
+  background: var(--accent-primary);
+  transform: scale(1.2);
+}
+
+.compact-slider__input:active::-moz-range-thumb {
+  transform: scale(1.1);
+}
+
+/* Track styling for Firefox */
+.compact-slider__input::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+/* Remove default focus outline */
+.compact-slider__input:focus {
+  outline: none;
+}
+
+/* Custom focus indicator */
+.compact-slider__input:focus-visible ~ .compact-slider__track {
+  box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+}
+
+/* ============================================
+   RANGE LABELS
+   ============================================ */
+
+.compact-slider__range-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-1);
+}
+
+.compact-slider__range-label {
+  font-size: 0.625rem; /* 10px */
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.compact-slider__range-label--center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ============================================
+   DISABLED STATE
+   ============================================ */
+
+.compact-slider--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.compact-slider--disabled .compact-slider__track {
+  background: var(--bg-secondary);
+}
+
+.compact-slider--disabled .compact-slider__fill {
+  opacity: 0.5;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .compact-slider__label {
+    font-size: 0.625rem; /* 10px */
+  }
+
+  .compact-slider__value {
+    font-size: 0.625rem; /* 10px */
+    min-width: 3rem;
+  }
+}

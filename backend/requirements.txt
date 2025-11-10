@@ -1,0 +1,22 @@
+# CNC-ToolCalc Backend Requirements
+# Version: 0.0.1-alpha
+# Python: 3.11+
+
+# FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Python standard library enhancements
+python-multipart==0.0.6
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+httpx==0.26.0
+
+# Development
+black==24.1.1
+ruff==0.1.14

@@ -1,0 +1,305 @@
+{
+  "FINISH_SLOT_OP": {
+    "id": "FINISH_SLOT_OP",
+    "display_name": "Slot: Finish",
+    "display_name_short": "Finish",
+    "category": "slot",
+    "group": "peripheral",
+    "ae_d_ratio": 0.15,
+    "fz_factor": 0.85,
+    "vc_factor": 1.0,
+    "description": "Finish slotting and wall surfaces with optimized parameters for surface quality",
+    "typical_tools": ["end_mill_z2", "end_mill_z3", "end_mill_z4"],
+    "feed_factors": {
+      "entry": 0.8,
+      "exit": 1.0,
+      "plunge": 0.3,
+      "ramp": 0.5,
+      "transition": 0.8
+    }
+  },
+  "RADIUS_CONTOUR_OP": {
+    "id": "RADIUS_CONTOUR_OP",
+    "display_name": "Contour: Radius",
+    "display_name_short": "Radius",
+    "category": "contour",
+    "group": "geometry_dependent",
+    "ae_d_ratio": 0.15,
+    "fz_factor": 0.8,
+    "vc_factor": 1.0,
+    "ap_constraint": "2 × radius",
+    "description": "Radius milling for rounded edges",
+    "typical_tools": ["radius_mill_r3", "radius_mill_r6"],
+    "validation": "ap <= 2 × tool_radius",
+    "feed_factors": {
+      "entry": 0.7,
+      "exit": 0.9,
+      "plunge": 0.25,
+      "ramp": 0.45,
+      "transition": 0.75
+    }
+  },
+  "CHAMFER_CONTOUR_OP": {
+    "id": "CHAMFER_CONTOUR_OP",
+    "display_name": "Contour: Chamfer",
+    "display_name_short": "Chamfer",
+    "category": "contour",
+    "group": "geometry_dependent",
+    "fz_factor": 0.7,
+    "vc_factor": 0.9,
+    "geometry_dependent": true,
+    "description": "Chamfering with V-mills or chamfer mills",
+    "typical_tools": ["chamfer_mill", "v_mill_90", "v_mill_120"],
+    "feed_factors": {
+      "entry": 0.6,
+      "exit": 0.8,
+      "plunge": 0.2,
+      "ramp": 0.4,
+      "transition": 0.7
+    },
+    "notes": "Spitze ist kritischer Punkt - langsame Vorschübe!"
+  },
+  "BALL_3D_OP": {
+    "id": "BALL_3D_OP",
+    "display_name": "3D: Ball-End",
+    "display_name_short": "Ball-End",
+    "category": "3d",
+    "group": "geometry_dependent",
+    "ae_d_ratio": 0.1,
+    "fz_factor": 0.7,
+    "vc_factor": 1.2,
+    "n_boost": 1.15,
+    "ap_max": "radius",
+    "description": "3D contouring with ball-end mills",
+    "typical_tools": ["ball_end_mill"],
+    "feed_factors": {
+      "entry": 0.7,
+      "exit": 0.9,
+      "plunge": 0.25,
+      "ramp": 0.45,
+      "transition": 0.75
+    },
+    "rationale": [
+      "Ball-end tip: vc → 0 (problematisch!)",
+      "Lösung: Höhere Drehzahl (n × 1.15)",
+      "Höhere vc (× 1.2)",
+      "Reduzierte fz (× 0.7)"
+    ]
+  },
+  "ROUGH_FACE_OP": {
+    "id": "ROUGH_FACE_OP",
+    "display_name": "Face: Rough",
+    "display_name_short": "Rough",
+    "category": "face",
+    "group": "face",
+    "engagement": "face",
+    "ap_typical": 1.0,
+    "ap_range": [0.5, 2.0],
+    "fz_factor": 1.0,
+    "vc_factor": 1.0,
+    "description": "Rough face milling for material removal",
+    "typical_tools": ["face_mill", "end_mill"],
+    "feed_factors": {
+      "entry": 1.0,
+      "exit": 1.0,
+      "plunge": 0.4,
+      "ramp": 0.6,
+      "transition": 0.9
+    }
+  },
+  "FINISH_FACE_OP": {
+    "id": "FINISH_FACE_OP",
+    "display_name": "Face: Finish",
+    "display_name_short": "Finish",
+    "category": "face",
+    "group": "face",
+    "engagement": "face",
+    "ap_typical": 0.2,
+    "ap_range": [0.1, 0.3],
+    "fz_factor": 0.8,
+    "vc_factor": 1.0,
+    "description": "Finish face milling for flat surfaces and pocket floors",
+    "typical_tools": ["end_mill_z3", "end_mill_z4"],
+    "surface_quality": "Ra 0.8-1.6 µm",
+    "feed_factors": {
+      "entry": 0.8,
+      "exit": 1.0,
+      "plunge": 0.3,
+      "ramp": 0.5,
+      "transition": 0.8
+    }
+  },
+  "PARTIAL_SLOT_OP": {
+    "id": "PARTIAL_SLOT_OP",
+    "display_name": "Slot: Partial",
+    "display_name_short": "Partial",
+    "category": "slot",
+    "group": "peripheral",
+    "ae_d_ratio": 0.35,
+    "ae_d_range": [0.2, 0.5],
+    "fz_factor": 1.0,
+    "vc_factor": 1.0,
+    "description": "Standard side milling with partial engagement",
+    "typical_tools": ["end_mill", "roughing_mill"],
+    "feed_factors": {
+      "entry": 0.9,
+      "exit": 1.0,
+      "plunge": 0.35,
+      "ramp": 0.55,
+      "transition": 0.85
+    }
+  },
+  "FULL_SLOT_OP": {
+    "id": "FULL_SLOT_OP",
+    "display_name": "Slot: Full",
+    "display_name_short": "Full",
+    "category": "slot",
+    "group": "peripheral",
+    "ae_d_ratio": 1.0,
+    "fz_factor": 0.5,
+    "vc_factor": 0.9,
+    "ap_factor": 0.6,
+    "warning": "⚠️ CRITICAL: Full engagement - 50% fz reduction mandatory!",
+    "description": "Full slotting - maximum chip load",
+    "typical_tools": ["end_mill", "slot_drill"],
+    "feed_factors": {
+      "entry": 0.6,
+      "exit": 0.8,
+      "plunge": 0.2,
+      "ramp": 0.3,
+      "transition": 0.6
+    },
+    "rationale": [
+      "Mittlere Spandicke ist DOPPELT so groß!",
+      "hm = fz × sqrt(ae/D) = fz × 1.0 (bei ae=D)",
+      "Deshalb: fz MUSS halbiert werden!",
+      "Sonst: Werkzeugbruch-Risiko!"
+    ],
+    "notes": "Bei Vollnut auch Rampenwinkel reduzieren (× 0.5)!"
+  },
+  "TROCHOIDAL_SLOT_OP": {
+    "id": "TROCHOIDAL_SLOT_OP",
+    "display_name": "Slot: Trochoidal",
+    "display_name_short": "Trochoidal",
+    "category": "slot",
+    "group": "peripheral",
+    "ae_d_ratio": 0.08,
+    "ae_d_range": [0.05, 0.1],
+    "fz_factor": 1.0,
+    "vc_factor": 1.3,
+    "ap_factor": 1.2,
+    "description": "High-speed trochoidal milling",
+    "typical_tools": ["end_mill"],
+    "feed_factors": {
+      "entry": 1.0,
+      "exit": 1.0,
+      "plunge": 0.5,
+      "ramp": 0.7,
+      "transition": 1.0
+    },
+    "advantages": [
+      "Sehr kleiner Eingriff (ae/D < 0.1)",
+      "Höhere Schnittgeschwindigkeit möglich (× 1.3)",
+      "Weniger Werkzeugbelastung",
+      "Kann tiefere Zustellungen fahren (× 1.2)"
+    ],
+    "cam_strategy": "2D Adaptive / Trochoidal required"
+  },
+  "DRILLING_OP": {
+    "id": "DRILLING_OP",
+    "display_name": "Special: Drilling",
+    "display_name_short": "Drilling",
+    "category": "special",
+    "group": "special",
+    "formula": "vf = fz × n (OHNE NOF!)",
+    "description": "Center drilling and full drilling",
+    "typical_tools": ["center_drill", "twist_drill"],
+    "material_fz": {
+      "Aluminium": 0.10,
+      "Hardwood": 0.15,
+      "Softwood": 0.20,
+      "Plastic": 0.12,
+      "Steel": 0.05,
+      "Stainless": 0.04,
+      "Brass": 0.08,
+      "Copper": 0.08
+    },
+    "feed_factors": {
+      "entry": 0.5,
+      "exit": 1.0,
+      "plunge": 1.0,
+      "ramp": 0.0,
+      "transition": 0.8
+    },
+    "notes": [
+      "Bohren hat keine NOF-Multiplikation!",
+      "Plunge ist Hauptvorschub (nicht reduziert!)"
+    ]
+  },
+  "VGROOVE_OP": {
+    "id": "VGROOVE_OP",
+    "display_name": "Special: V-Groove",
+    "display_name_short": "V-Groove",
+    "category": "special",
+    "group": "geometry_dependent",
+    "fz_factor": 0.6,
+    "vc_factor": 0.8,
+    "d_effective_calculation": true,
+    "description": "Engraving and V-groove milling",
+    "typical_tools": ["engraving_bit", "v_mill_90", "v_mill_120"],
+    "feed_factors": {
+      "entry": 0.5,
+      "exit": 0.7,
+      "plunge": 0.15,
+      "ramp": 0.3,
+      "transition": 0.6
+    },
+    "warning": "Spitze ist kritisch - sehr langsame Eintauchvorschübe!",
+    "geometry": {
+      "v_90": "tip_offset = chamfer_width",
+      "v_120": "tip_offset = chamfer_width / 1.732"
+    }
+  },
+  "THREADING_OP": {
+    "id": "THREADING_OP",
+    "display_name": "Special: Threading",
+    "display_name_short": "Threading",
+    "category": "special",
+    "group": "special",
+    "formula": "vf = pitch × n (exakt!)",
+    "pitch_dependent": true,
+    "description": "Thread milling with fixed pitch",
+    "typical_tools": ["thread_mill"],
+    "material_vc_factors": {
+      "Hardwood": 1.2,
+      "Softwood": 1.3,
+      "Plastic": 1.2,
+      "Aluminium": 1.0,
+      "Steel": 0.6,
+      "Stainless": 0.5,
+      "Brass": 0.9,
+      "Copper": 0.9
+    },
+    "pitch_by_thread": {
+      "M3": 0.5,
+      "M4": 0.7,
+      "M5": 0.8,
+      "M6": 1.0,
+      "M8": 1.25,
+      "M10": 1.5,
+      "M12": 1.75
+    },
+    "feed_factors": {
+      "entry": 0.3,
+      "exit": 0.5,
+      "plunge": 1.0,
+      "ramp": 0.0,
+      "transition": 0.5
+    },
+    "notes": [
+      "Vorschub ist FEST vorgegeben durch Steigung!",
+      "vf MUSS exakt pitch × n sein!",
+      "Keine fz-Berechnung wie bei normalem Fräsen!"
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "low_rpm_threshold": 4500,
+  "low_rpm_fz_factor": 0.90,
+  "lcd_thresholds": {
+    "normal": 3.0,
+    "moderate": 5.0,
+    "high": 7.0,
+    "critical": 10.0
+  },
+  "lcd_adjustments": {
+    "fz_factors": {
+      "3.0": 1.00,
+      "5.0": 0.90,
+      "7.0": 0.80,
+      "10.0": 0.70
+    },
+    "ae_factors": {
+      "3.0": 1.00,
+      "5.0": 0.95,
+      "7.0": 0.90,
+      "10.0": 0.85
+    }
+  },
+  "safety_margins": {
+    "vc_max_factor": 1.5,
+    "fz_max_factor": 2.0,
+    "ae_max_factor": 1.0,
+    "ap_max_factor": 1.0
+  }
+}

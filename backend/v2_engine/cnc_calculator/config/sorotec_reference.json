@@ -1,0 +1,45 @@
+{
+  "description": "Sorotec reference cutting data for validation",
+  "source": "Sorotec official recommendations",
+  "validation_tolerances": {
+    "green_threshold_pct": 15,
+    "yellow_threshold_pct": 30,
+    "red_threshold_pct": 50
+  },
+  "reference_data": {
+    "Alu": {
+      "D6_NOF2": {
+        "diameter": 6,
+        "flutes": 2,
+        "vc": 300,
+        "fz": 0.055,
+        "rpm": 15900,
+        "vf": 1750,
+        "ae": 3.0,
+        "ap": 5.0
+      },
+      "D10_NOF3": {
+        "diameter": 10,
+        "flutes": 3,
+        "vc": 320,
+        "fz": 0.070,
+        "rpm": 10200,
+        "vf": 2140,
+        "ae": 5.0,
+        "ap": 8.0
+      }
+    },
+    "HolzW": {
+      "D6_NOF2": {
+        "diameter": 6,
+        "flutes": 2,
+        "vc": 380,
+        "fz": 0.065,
+        "rpm": 6000,
+        "vf": 780,
+        "ae": 3.0,
+        "ap": 6.0
+      }
+    }
+  }
+}

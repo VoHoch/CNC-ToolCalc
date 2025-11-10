@@ -1,0 +1,8 @@
+{
+  "spindle_name": "HSD 6.0kW ATC",
+  "power_kw": 6.0,
+  "rpm_min": 2000,
+  "rpm_max": 24000,
+  "rpm_optimal_range": [8000, 18000],
+  "notes": "Sorotec 6kW Spindel mit Werkzeugwechsler"
+}

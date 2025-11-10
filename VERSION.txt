@@ -1,0 +1,7 @@
+v0.0.1-alpha
+
+CNC-ToolCalc - CNC Cutting Parameter Calculator
+Production-ready Target: v1.0.0
+
+Version History:
+- v0.0.1-alpha (2025-11-10): Initial setup, project structure created

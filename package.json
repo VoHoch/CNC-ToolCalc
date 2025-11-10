@@ -1,0 +1,46 @@
+{
+  "name": "cnc-toolcalc",
+  "version": "0.0.1-alpha",
+  "description": "CNC Cutting Parameter Calculator - Production Tool for Manufacturing",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && uvicorn api.main:app --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "cd backend && pytest",
+    "test:e2e": "cd frontend && npm run test:e2e",
+    "quality-gate-0": "bash scripts/quality-gate-0.sh",
+    "quality-gate-1": "bash scripts/quality-gate-1.sh",
+    "quality-gate-2": "bash scripts/quality-gate-2.sh",
+    "quality-gate-3": "bash scripts/quality-gate-3.sh",
+    "quality-gate-4": "bash scripts/quality-gate-4.sh",
+    "quality-gate-5": "bash scripts/quality-gate-5.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/cnc-toolcalc.git"
+  },
+  "keywords": [
+    "cnc",
+    "manufacturing",
+    "cutting-parameters",
+    "fusion360",
+    "calculator"
+  ],
+  "author": "Your Company",
+  "license": "PROPRIETARY"
+}

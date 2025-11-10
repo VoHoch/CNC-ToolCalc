@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+.pytest_cache/
+htmlcov/
+
+# Temporary
+*.tmp
+tmp/
+temp/
+
+# Agent Reports (tracked in git!)
+# .agent-reports/ is INTENTIONALLY tracked
+
+# OS
+Thumbs.db
